@@ -1,0 +1,273 @@
+## ECS Physical Simulation Terminology Framework
+
+## Core Architectural Terms
+
+### **Entity**
+
+- **Definition**: A specific instance of a system that serves as the entry point for environment and inter-system interactions
+- **Relationship**: Entity is to System as Object is to Class
+- **Special Case**: Actually a special case of Component that provides top-level interface to environment
+- **Examples**: `Car_Entity_001`, `Boeing777_N774UA`, `Missile_AIM120_Serial_4501`
+
+### **Component**
+
+- **Definition**: A specific instance of a subsystem containing both state information and behavioral characteristics
+- **Relationship**: Component is to Subsystem as Object is to Class
+- **State Content**: Current working values (position, velocity, temperature, actuator positions, etc.)
+- **Hierarchy**: Components can contain sub-components; Entity is a special case of Component
+- **Examples**: `TurbofanEngine_GE90_S001`, `SteeringWheel_Moog_760_Unit_42`, `SpringDamper_Assembly_L1`
+
+### **State**
+
+- **Definition**: The current working values of an entity or component at a specific simulation time
+- **Truth Values**: Primary state variables in the authoritative coordinate frame (position, velocity, acceleration)
+- **Dependent Values**: Calculated convenience values in other coordinate frames or representations
+- **Simple State**: May be contained directly within the component (actuator: current_angle, angular_rate, angular_acceleration, command)
+- **Complex State**: May be represented as specialized state objects for complex calculations
+- **Examples**: Spatial state, thermal state, electrical state, control state
+
+### **System** (Type Definition)
+
+- **Definition**: A complete integrated assembly type composed of multiple subsystem types
+- **Usage**: The "class" definition that describes what components are needed and how they integrate
+- **Examples**: `Car` (system type), `Aircraft` (system type), `Missile` (system type)
+
+### **Subsystem** (Type Definition)
+
+- **Definition**: A component type that defines the structure and behavior of a physical part or functional unit
+- **Usage**: The "class" definition for components
+- **Examples**: `TurbofanEngine` (subsystem type), `LinearActuator` (subsystem type), `HelicalSpring` (subsystem type)
+
+### **Environment**
+
+- **Definition**: Global simulation context providing shared effects and boundary conditions
+- **Content**: Atmospheric properties, gravitational fields, ambient temperature, terrain models, wind fields
+- **Usage**: Singular simulation-wide context affecting all entities
+- **Examples**: `EarthStandardAtmosphere`, `MarsEnvironment`, `VacuumSpace`
+
+## Configuration Hierarchy
+
+### **Schema**
+
+- **Definition**: Structural definition specifying what parameters, fields, and constraints define a particular category
+- **Usage**: Defines the "template" or "type definition" - what makes something that category
+- **File naming**: `*.schema.json`, `*.schema.yaml`
+- **Example**: `Car.schema.json` (defines what parameters make something a "car")
+
+### **Specification**
+
+- **Definition**: Complete parameter set defining constant values and distributions for a specific system type
+- Content:
+  - Constant values (mass for constant-mass objects)
+  - Initial values (initial mass for variable-mass objects)
+  - Random variable distributions (mass variation distributions)
+  - Design parameters that remain constant during execution
+- **Usage**: Defines the fundamental characteristics of a specific system type
+- **File naming**: `*.spec.json`, `*.spec.yaml`
+- **Example**: `Camry_2025.spec.json` (mass=1500kg, engine_displacement=2.5L, etc.)
+
+### **Variant Specification**
+
+- **Definition**: A normal specification with naming conventions that instruct software to override specific values in a base specification
+- **Implementation**: Standard specification format with naming that triggers override behavior
+- **Usage**: Convenience for very similar systems (could be achieved with separate specifications)
+- **Differentiates**: Between models/types (Camry vs Corolla, 2023 Camry vs 2021 Camry, trim levels)
+- **File naming**: `*.variant.json`, `*.variant.yaml`
+- Examples:
+  - `Camry_2025_LE.variant.json` (base trim overrides)
+  - `Camry_2025_XSE.variant.json` (sport trim with different wheels, suspension)
+
+### **Instance Configuration**
+
+- **Definition**: Values specific to individual instances including ownership, natural variation, and initialized state
+- Content:
+  - Initial world position/orientation
+  - Manufacturing tolerances and natural variation
+  - Ownership/identification information
+  - Initial state values (fuel level, wear, etc.)
+- **Usage**: Not tied to specifications - a 2025 Camry is still a 2025 Camry regardless of instance config
+- **File naming**: `*.instance.json`, `*.config.json`
+- **Example**: `Camry_VIN_12345.instance.json` (initial_position, owner="Bob", manufacturing_tolerance=0.98)
+
+### **Scenario Configuration**
+
+- **Definition**: Complete simulation setup including environment, entities, and initial conditions
+- **Usage**: Defines experimental or operational conditions for simulation execution
+- **File naming**: `*.scenario.json`
+- **Example**: `highway_cruise_test.scenario.json`
+
+## Parameters vs Constants
+
+### **Parameters**
+
+- **Definition**: Designed values that are allowed to change during simulation execution
+- **Examples**: Throttle position, steering angle, control surface deflection, brake pressure
+- **Usage**: Variables that can be modified by control systems or external inputs during runtime
+
+### **Constants**
+
+- **Definition**: Values that remain fixed throughout simulation execution
+- **Source**: Defined in specifications and variant configurations
+- **Examples**: Vehicle mass (for constant-mass objects), maximum engine power, structural stiffness
+- **Usage**: Fundamental system properties that don't change during a simulation run
+
+### **State Variables**
+
+- **Definition**: Time-varying quantities that evolve during simulation execution based on physics
+- **Examples**: Position, velocity, acceleration, temperature, internal energy
+- **Usage**: Variables integrated/updated by differential equations and physics calculations
+
+## File Organization (Version Control + Submodules)
+
+```
+schemas/
+â”œâ”€â”€ Car.schema.json
+â”œâ”€â”€ Aircraft.schema.json  
+â”œâ”€â”€ TurbofanEngine.schema.json
+â”œâ”€â”€ LinearActuator.schema.json
+â”œâ”€â”€ EarthEnvironment.schema.json
+â””â”€â”€ Scenario.schema.json
+
+specifications/
+â”œâ”€â”€ toyota_camry_2025/              # Git repo: toyota_camry_2025
+â”‚   â”œâ”€â”€ toyota_camry_2025.spec.json
+â”‚   â”œâ”€â”€ variants/
+â”‚   â”‚   â”œâ”€â”€ LE_trim.variant.json
+â”‚   â”‚   â”œâ”€â”€ XLE_trim.variant.json
+â”‚   â”‚   â””â”€â”€ XSE_trim.variant.json
+â”‚   â”œâ”€â”€ submodules/
+â”‚   â”‚   â”œâ”€â”€ common_engines/         # Git submodule: shared engine specs
+â”‚   â”‚   â”œâ”€â”€ common_transmissions/   # Git submodule: shared transmission specs
+â”‚   â”‚   â””â”€â”€ toyota_common/          # Git submodule: Toyota shared components
+â”‚   â””â”€â”€ README.md
+â”œâ”€â”€ boeing_777_300er/               # Git repo: boeing_777_300er  
+â”‚   â”œâ”€â”€ boeing_777_300er.spec.json
+â”‚   â”œâ”€â”€ variants/
+â”‚   â”‚   â”œâ”€â”€ passenger.variant.json
+â”‚   â”‚   â”œâ”€â”€ cargo.variant.json
+â”‚   â”‚   â””â”€â”€ extended_range.variant.json
+â”‚   â”œâ”€â”€ submodules/
+â”‚   â”‚   â”œâ”€â”€ common_engines/         # Git submodule: shared with other aircraft
+â”‚   â”‚   â”œâ”€â”€ boeing_avionics/        # Git submodule: Boeing shared avionics
+â”‚   â”‚   â””â”€â”€ pratt_whitney_engines/  # Git submodule: P&W engine family
+â”‚   â””â”€â”€ versions.md
+â””â”€â”€ common_components/              # Shared submodule repositories
+    â”œâ”€â”€ automotive_engines/         # Git repo: automotive_engines
+    â”‚   â”œâ”€â”€ toyota_2ar_fxe.spec.json
+    â”‚   â”œâ”€â”€ toyota_1nz_fxe.spec.json
+    â”‚   â””â”€â”€ honda_k20c1.spec.json
+    â”œâ”€â”€ aircraft_engines/           # Git repo: aircraft_engines
+    â”‚   â”œâ”€â”€ ge90_115b.spec.json
+    â”‚   â”œâ”€â”€ cfm56_7b.spec.json
+    â”‚   â””â”€â”€ pw4000_series.spec.json
+    â””â”€â”€ linear_actuators/           # Git repo: linear_actuators
+        â”œâ”€â”€ moog_760_series.spec.json
+        â””â”€â”€ parker_series_2h.spec.json
+
+configurations/
+â”œâ”€â”€ instances/
+â”‚   â”œâ”€â”€ bobs_camry_vin12345.instance.json
+â”‚   â”œâ”€â”€ jims_corolla_vin67890.instance.json
+â”‚   â”œâ”€â”€ n774ua_boeing777.instance.json
+â”‚   â””â”€â”€ missile_serial_4501.instance.json
+â”œâ”€â”€ scenarios/
+â”‚   â”œâ”€â”€ highway_cruise_test.scenario.json
+â”‚   â”œâ”€â”€ emergency_landing.scenario.json
+â”‚   â””â”€â”€ intercept_simulation.scenario.json
+â””â”€â”€ test_cases/
+    â”œâ”€â”€ engine_failure_test.scenario.json
+    â””â”€â”€ collision_avoidance.scenario.json
+```
+
+## Implementation Classes
+
+### **SystemSchema / SubsystemSchema**
+
+- **Definition**: Generated classes defining parameter structure, types, validation rules, and constraints
+- **Examples**: `CarSchema`, `TurbofanEngineSchema`, `LinearActuatorSchema`
+
+### **SystemSpec / SubsystemSpec** 
+
+- **Definition**: Data classes containing constant values and distributions for a specific system type
+- **Examples**: `Camry2025Spec`, `GE90_115B_Spec`
+
+### **InstanceConfiguration**
+
+- **Definition**: Data classes containing instance-specific values and initial conditions
+- **Examples**: `BobsCamryInstance`, `N774UA_Instance`, `MissileSerial4501Instance`
+
+### **Entity / Component (Runtime)**
+
+- **Definition**: Runtime objects instantiated from specifications, variants, and instance configurations
+- **Contains**: Constants (from specs/variants), Parameters (controllable), and State (evolving)
+- **Examples**: `CarEntity`, `TurbofanEngineComponent`, `ActuatorComponent`
+
+## Versioning
+
+### Application and Configuration Versioning Format
+
+This guide explains the versioning system used by the application and its associated configuration files.
+
+### Application Version Format: 1.x.y.z
+
+The application uses a four-part version number:
+
+1. **Main Version (1)**: This is the current generation of the application. It will likely stay at 1 in perpetuity unless the whole application is rewritten from the ground up. It should be 0 until the first official release.
+2. **Major Version (x)**: Incremented when making non-backward compatible interface changes. When this number increases, users must update their configuration files as the application interface has fundamentally changed.
+3. **Minor Version (y)**: Incremented when adding new functionality in a backward-compatible manner. The application can work with older configurations designed for the same major version.
+4. **Patch Version (z)**: Incremented for bug fixes and minor changes that don't affect the interface.
+
+#### Version Number Resets
+
+When incrementing a higher-significance part of the version, all lower-significance parts reset to zero. For example:
+
+- 1.2.3.4 â†’ 1.2.4.0 (patch reset when minor increases)
+- 1.2.3.4 â†’ 1.3.0.0 (patch and minor reset when major increases)
+
+### System Configuration Version Format: 1.x.y.w
+
+System configuration files follow a similar format with a key difference:
+
+1. **Main Version (1)**: Fixed at "1" to match the application.
+2. **Major Version (x)**: Must match the application's major version.
+3. **Minor Version (y)**: Must be less than or equal to the application's minor version.
+4. **Increment Version (w)**: This is unique to configuration files. It increases with each config update and **never resets to zero**, even when major or minor versions change.
+
+#### Example Evolution
+
+Below is an example of how configuration versions might evolve:
+
+- Config starts at: 1.2.3.1
+- New config update: 1.2.3.2
+- Another update: 1.2.3.3
+- Application updates to 1.2.4.0, config must follow: 1.2.4.4
+- More config changes: 1.2.4.5, 1.2.4.6
+- Application updates to 1.3.0.0, config must follow: 1.3.0.7
+
+Note how the increment number (w) never resets, creating a unique identifier for each configuration version.
+
+### Compatibility Rules
+
+1. **Major Version Match**: The major version (x) of the application and configuration must match exactly.
+2. **Minor Version Compatibility**: The application's minor version (y) must be greater than or equal to the configuration's minor version.
+3. **Increment and Patch Independence**: The increment number (w) in configs and patch number (z) in the application have no bearing on compatibility.
+
+## Design Rationale and Problem Resolution
+
+This terminology framework addresses several critical challenges in component-based physical simulation systems:
+
+**Configuration Complexity Management**: Large-scale simulations often involve hundreds of interacting components with thousands of parameters. The hierarchical Schema â†’ Specification â†’ Variant â†’ Instance structure provides clear categorization that prevents parameter confusion and enables systematic configuration management.
+
+**Version Control at Scale**: Engineering organizations need to track multiple versions of system designs while sharing common components across projects. The combination of flat schema organization with versioned specification repositories and git submodules enables efficient reuse while maintaining proper change tracking and release management.
+
+**Manufacturing and Deployment Reality**: Real systems exhibit natural variation from design intent due to manufacturing tolerances, wear, and deployment-specific conditions. The separation between specification constants (design intent), variant specifications (model differences), and instance configurations (individual unit variations) captures this engineering reality.
+
+**Parameter vs State Distinction**: Simulation systems must clearly distinguish between values that define system characteristics (constants), values that can be controlled during operation (parameters), and values that evolve according to physical laws (state). This distinction is essential for proper physics integration and control system design.
+
+**Component Composition and Reuse**: Complex systems are built from simpler subsystems, often shared across multiple applications. The component hierarchy with entity/component relationships and shared specification repositories enables modular design patterns that match real engineering practices.
+
+**Code Generation and Cross-Language Support**: Modern simulation systems often span multiple programming languages and require automated code generation from configuration definitions. The schema-based approach with consistent naming conventions enables reliable toolchain development across diverse technical environments.
+
+**Collaborative Engineering Workflows**: Large engineering teams need consistent terminology to communicate effectively across disciplines. This framework provides unambiguous definitions that bridge mechanical, electrical, software, and systems engineering domains while remaining accessible to both technical and non-technical stakeholders.
+
+This framework supports realistic engineering workflows where components are reused across multiple system designs, variant specifications provide convenient model differences, and instance configurations capture real-world manufacturing and deployment variations.
