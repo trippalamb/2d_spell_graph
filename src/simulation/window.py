@@ -54,6 +54,11 @@ class GraphSimulation(arcade.Window):
         self.pan_start_offset_x = 0
         self.pan_start_offset_y = 0
 
+        # Node dragging state
+        self.dragged_node: Optional[Node] = None
+        self.drag_offset_x = 0
+        self.drag_offset_y = 0
+
         # Info window for entity hover
         self.info_window = InfoWindow()
 
@@ -85,22 +90,6 @@ class GraphSimulation(arcade.Window):
         restart_button.on_click = self._on_restart
         v_box.add(restart_button)
 
-        # Zoom in button
-        zoom_in_button = arcade.gui.UIFlatButton(
-            text="Zoom In (+)",
-            width=120
-        )
-        zoom_in_button.on_click = self._on_zoom_in
-        v_box.add(zoom_in_button)
-
-        # Zoom out button
-        zoom_out_button = arcade.gui.UIFlatButton(
-            text="Zoom Out (-)",
-            width=120
-        )
-        zoom_out_button.on_click = self._on_zoom_out
-        v_box.add(zoom_out_button)
-
         # Create an anchor layout to position the buttons
         anchor = arcade.gui.UIAnchorLayout()
         anchor.add(
@@ -125,14 +114,6 @@ class GraphSimulation(arcade.Window):
         """Handle restart button click."""
         self.cursor_manager.restart(self.nodes)
         self.play_pause_button.text = "Pause"
-
-    def _on_zoom_in(self, event):
-        """Handle zoom in button click."""
-        self.transform.world_scale *= 1.2
-
-    def _on_zoom_out(self, event):
-        """Handle zoom out button click."""
-        self.transform.world_scale /= 1.2
 
     def setup(self, config_path: str = "configs/default.json"):
         """
@@ -233,6 +214,14 @@ class GraphSimulation(arcade.Window):
             self.transform.offset_x = self.pan_start_offset_x + (x - self.pan_start_x)
             self.transform.offset_y = self.pan_start_offset_y + (y - self.pan_start_y)
 
+        # Handle node dragging when left mouse button is held
+        if self.dragged_node is not None:
+            # Convert screen position to world position
+            world_x, world_y = self.transform.screen_to_world(x, y)
+            # Update node position with drag offset
+            self.dragged_node.x = world_x - self.drag_offset_x
+            self.dragged_node.y = world_y - self.drag_offset_y
+
     def on_mouse_press(self, x: float, y: float, button: int, modifiers: int):
         """
         Handle mouse button press.
@@ -243,8 +232,22 @@ class GraphSimulation(arcade.Window):
             button: Mouse button that was pressed
             modifiers: Keyboard modifiers
         """
+        # Start node dragging on left mouse button
+        if button == arcade.MOUSE_BUTTON_LEFT:
+            # Convert screen position to world position
+            world_x, world_y = self.transform.screen_to_world(x, y)
+
+            # Check if clicking on a node
+            for node in self.nodes:
+                if node.contains_point(world_x, world_y, self.transform):
+                    self.dragged_node = node
+                    # Store offset from node center to click position
+                    self.drag_offset_x = world_x - node.x
+                    self.drag_offset_y = world_y - node.y
+                    break
+
         # Start panning on right mouse button
-        if button == arcade.MOUSE_BUTTON_RIGHT:
+        elif button == arcade.MOUSE_BUTTON_RIGHT:
             self.is_panning = True
             self.pan_start_x = x
             self.pan_start_y = y
@@ -261,9 +264,41 @@ class GraphSimulation(arcade.Window):
             button: Mouse button that was released
             modifiers: Keyboard modifiers
         """
+        # Stop node dragging on left mouse button release
+        if button == arcade.MOUSE_BUTTON_LEFT:
+            self.dragged_node = None
+
         # Stop panning on right mouse button release
-        if button == arcade.MOUSE_BUTTON_RIGHT:
+        elif button == arcade.MOUSE_BUTTON_RIGHT:
             self.is_panning = False
+
+    def on_mouse_scroll(self, x: float, y: float, scroll_x: float, scroll_y: float):
+        """
+        Handle mouse scroll (zoom).
+
+        Args:
+            x: Mouse X position
+            y: Mouse Y position
+            scroll_x: Horizontal scroll amount
+            scroll_y: Vertical scroll amount (positive = zoom in)
+        """
+        # Get world position of mouse before zoom
+        world_x_before, world_y_before = self.transform.screen_to_world(x, y)
+
+        # Update zoom level
+        zoom_factor = 1.1
+        if scroll_y > 0:
+            # Zoom in
+            self.transform.world_scale *= zoom_factor
+        elif scroll_y < 0:
+            # Zoom out
+            self.transform.world_scale /= zoom_factor
+
+        # Get world position of mouse after zoom (without offset adjustment)
+        # We want: world_x_before = (x - new_offset_x) / new_scale
+        # Solving: new_offset_x = x - world_x_before * new_scale
+        self.transform.offset_x = x - world_x_before * self.transform.world_scale
+        self.transform.offset_y = y - world_y_before * self.transform.world_scale
 
     def _update_hovered_entity(self):
         """Update which entity is currently being hovered."""
