@@ -1,15 +1,57 @@
 """Main simulation window for the spell graph."""
 import arcade
 import arcade.gui
-from typing import List, Optional
+from typing import List, Optional, Tuple
 import json
 import os
+import re
 
-from src.core import Node, NodeType, Edge, SpellGraphEntity
+from src.core import Node, NodeType, Edge, EdgeDirection, SpellGraphEntity
 from src.physics import update_node_forces
 from src.simulation.cursor import CursorManager
 from src.simulation.transform import CoordinateTransform
 from src.simulation.info_window import InfoWindow
+
+
+def parse_svg_path(path: str) -> List[Tuple[float, float]]:
+    """
+    Parse SVG path string into list of coordinate points.
+
+    Args:
+        path: SVG path string (e.g., "M 200,200 L 400,300 L 400,500")
+
+    Returns:
+        List of (x, y) tuples
+    """
+    points = []
+    commands = re.findall(r'([ML])\s*([\d.]+)[,\s]+([\d.]+)', path)
+
+    for cmd, x, y in commands:
+        points.append((float(x), float(y)))
+
+    return points
+
+
+def find_node_by_position(nodes: List[Node], x: float, y: float, tolerance: float = 1.0) -> Optional[Node]:
+    """
+    Find a node at a specific position.
+
+    Args:
+        nodes: List of nodes to search
+        x: X coordinate
+        y: Y coordinate
+        tolerance: Maximum distance to consider a match
+
+    Returns:
+        Node at that position, or None if not found
+    """
+    for node in nodes:
+        dx = node.x - x
+        dy = node.y - y
+        distance = (dx * dx + dy * dy) ** 0.5
+        if distance <= tolerance:
+            return node
+    return None
 
 
 class GraphSimulation(arcade.Window):
@@ -173,11 +215,36 @@ class GraphSimulation(arcade.Window):
             node = Node(node_data['x'], node_data['y'], node_type)
             self.nodes.append(node)
 
-        # Load edges
+        # Load edges and build node-edge relationships
         self.edges = []
         for edge_data in config.get('edges', []):
-            edge = Edge(edge_data['path'])
+            path = edge_data['path']
+            points = parse_svg_path(path)
+
+            if len(points) < 2:
+                continue  # Skip invalid edges
+
+            # Find start and end nodes
+            start_x, start_y = points[0]
+            end_x, end_y = points[-1]
+
+            start_node = find_node_by_position(self.nodes, start_x, start_y)
+            end_node = find_node_by_position(self.nodes, end_x, end_y)
+
+            if start_node is None or end_node is None:
+                print(f"Warning: Could not find nodes for edge {path}")
+                continue
+
+            # Extract control points (intermediate waypoints)
+            control_points = points[1:-1]  # Everything between start and end
+
+            # Create edge with node references
+            edge = Edge(start_node, end_node, control_points)
             self.edges.append(edge)
+
+            # Register edge with nodes
+            start_node.add_edge(edge, EdgeDirection.OUTGOING)
+            end_node.add_edge(edge, EdgeDirection.INCOMING)
 
     def on_update(self, delta_time: float):
         """

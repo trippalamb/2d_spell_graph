@@ -2,64 +2,66 @@
 import math
 import re
 import arcade
-from typing import List, Tuple, Dict, Any, TYPE_CHECKING
+from typing import List, Tuple, Dict, Any, TYPE_CHECKING, Optional
+from enum import Enum
 
 from src.core.entity import SpellGraphEntity
 
 if TYPE_CHECKING:
     from src.simulation.transform import CoordinateTransform
+    from src.core.node import Node
+
+
+class EdgeDirection(Enum):
+    """Direction of edge relative to a node."""
+    INCOMING = "incoming"
+    OUTGOING = "outgoing"
 
 
 class Edge(SpellGraphEntity):
     """
     Represents an edge in the spatial physics graph.
 
-    Edges are defined by SVG-like path strings (D3 format) and have
-    tension values based on the angles of their bending.
+    Edges dynamically connect two nodes and can have intermediate control points.
+    The edge path is recalculated whenever nodes move.
 
     Attributes:
-        path: SVG path string (e.g., "M 0,0 L 100,100 L 200,50")
-        points: List of (x, y) coordinate tuples parsed from path
+        start_node: The source node
+        end_node: The target node
+        control_points: List of intermediate waypoints (in world coordinates)
         tension_values: List of tension values at each bend point
     """
 
-    def __init__(self, path: str, entity_id: str = None):
+    def __init__(self, start_node: 'Node', end_node: 'Node',
+                 control_points: Optional[List[Tuple[float, float]]] = None,
+                 entity_id: str = None):
         """
-        Initialize an edge from a path string.
+        Initialize an edge between two nodes.
 
         Args:
-            path: SVG path string (D3 format)
+            start_node: Source node
+            end_node: Target node
+            control_points: Optional list of intermediate waypoints
             entity_id: Unique identifier (auto-generated if None)
         """
         if entity_id is None:
             entity_id = f"edge_{id(self)}"
         super().__init__(entity_id)
 
-        self.path = path
-        self.points = self._parse_path(path)
-        self.tension_values = self._calculate_tensions()
+        self.start_node = start_node
+        self.end_node = end_node
+        self.control_points = control_points if control_points is not None else []
 
-    def _parse_path(self, path: str) -> List[Tuple[float, float]]:
+    def get_points(self) -> List[Tuple[float, float]]:
         """
-        Parse SVG path string into list of points.
-
-        Currently supports:
-        - M x,y (move to)
-        - L x,y (line to)
-
-        Args:
-            path: SVG path string
+        Get the current path points dynamically from node positions.
 
         Returns:
-            List of (x, y) tuples
+            List of (x, y) tuples representing the path
         """
-        points = []
-        # Simple regex parser for M and L commands
-        commands = re.findall(r'([ML])\s*([\d.]+)[,\s]+([\d.]+)', path)
-
-        for cmd, x, y in commands:
-            points.append((float(x), float(y)))
-
+        points = [(self.start_node.x, self.start_node.y)]
+        points.extend(self.control_points)
+        points.append((self.end_node.x, self.end_node.y))
         return points
 
     def _calculate_tensions(self) -> List[float]:
@@ -72,15 +74,16 @@ class Edge(SpellGraphEntity):
         Returns:
             List of tension values (0.0 to 1.0)
         """
-        if len(self.points) < 3:
+        points = self.get_points()
+        if len(points) < 3:
             return []
 
         tensions = []
 
-        for i in range(1, len(self.points) - 1):
-            p0 = self.points[i - 1]
-            p1 = self.points[i]
-            p2 = self.points[i + 1]
+        for i in range(1, len(points) - 1):
+            p0 = points[i - 1]
+            p1 = points[i]
+            p2 = points[i + 1]
 
             # Calculate vectors
             v1 = (p1[0] - p0[0], p1[1] - p0[1])
@@ -148,15 +151,18 @@ class Edge(SpellGraphEntity):
         """
         total_length = self._get_total_length()
         avg_tension = self.get_average_tension()
+        tension_values = self._calculate_tensions()
+        points = self.get_points()
 
         return {
             "ID": self.entity_id,
             "Type": "Edge",
-            "Path": self.path[:40] + "..." if len(self.path) > 40 else self.path,
-            "Points": f"{len(self.points)} points",
+            "Start Node": self.start_node.entity_id,
+            "End Node": self.end_node.entity_id,
+            "Points": f"{len(points)} points",
             "Length": f"{total_length:.1f}",
             "Avg Tension": f"{avg_tension:.3f}",
-            "Max Tension": f"{max(self.tension_values):.3f}" if self.tension_values else "0.000"
+            "Max Tension": f"{max(tension_values):.3f}" if tension_values else "0.000"
         }
 
     def contains_point(self, x: float, y: float, transform: 'CoordinateTransform') -> bool:
@@ -172,11 +178,12 @@ class Edge(SpellGraphEntity):
             True if point is within threshold distance of the edge
         """
         threshold = 10  # world units
+        points = self.get_points()
 
         # Check distance to each line segment
-        for i in range(len(self.points) - 1):
-            p1 = self.points[i]
-            p2 = self.points[i + 1]
+        for i in range(len(points) - 1):
+            p1 = points[i]
+            p2 = points[i + 1]
 
             # Calculate distance from point to line segment
             dist = self._point_to_segment_distance(x, y, p1[0], p1[1], p2[0], p2[1])
@@ -226,10 +233,11 @@ class Edge(SpellGraphEntity):
         Returns:
             Total path length in pixels
         """
+        points = self.get_points()
         total_length = 0.0
-        for i in range(len(self.points) - 1):
-            p1 = self.points[i]
-            p2 = self.points[i + 1]
+        for i in range(len(points) - 1):
+            p1 = points[i]
+            p2 = points[i + 1]
             dx = p2[0] - p1[0]
             dy = p2[1] - p1[1]
             total_length += math.sqrt(dx * dx + dy * dy)
@@ -245,11 +253,12 @@ class Edge(SpellGraphEntity):
         Returns:
             Tuple of (point, angle) where angle is the direction of the path at that point
         """
+        points = self.get_points()
         current_distance = 0.0
 
-        for i in range(len(self.points) - 1):
-            p1 = self.points[i]
-            p2 = self.points[i + 1]
+        for i in range(len(points) - 1):
+            p1 = points[i]
+            p2 = points[i + 1]
 
             dx = p2[0] - p1[0]
             dy = p2[1] - p1[1]
@@ -272,13 +281,13 @@ class Edge(SpellGraphEntity):
             current_distance += segment_length
 
         # If we get here, return the last point
-        if len(self.points) >= 2:
-            p1 = self.points[-2]
-            p2 = self.points[-1]
+        if len(points) >= 2:
+            p1 = points[-2]
+            p2 = points[-1]
             angle = math.atan2(p2[1] - p1[1], p2[0] - p1[0])
             return (p2, angle)
 
-        return (self.points[0], 0.0)
+        return (points[0], 0.0)
 
     def _draw_arrow(self, position: Tuple[float, float], angle: float, color: tuple,
                     transform: 'CoordinateTransform', arrow_size: float = 12):
@@ -327,15 +336,16 @@ class Edge(SpellGraphEntity):
         Args:
             transform: Coordinate transform for world-to-screen conversion
         """
-        if len(self.points) < 2:
+        points = self.get_points()
+        if len(points) < 2:
             return
 
         color = self.get_color()
 
         # Draw line segments (converting world to screen coordinates)
-        for i in range(len(self.points) - 1):
-            p1_world = self.points[i]
-            p2_world = self.points[i + 1]
+        for i in range(len(points) - 1):
+            p1_world = points[i]
+            p2_world = points[i + 1]
 
             p1_screen = transform.world_to_screen(p1_world[0], p1_world[1])
             p2_screen = transform.world_to_screen(p2_world[0], p2_world[1])
@@ -343,7 +353,7 @@ class Edge(SpellGraphEntity):
             arcade.draw_line(p1_screen[0], p1_screen[1], p2_screen[0], p2_screen[1], color, 3)
 
         # Draw directional arrow at path midpoint (on the containing segment)
-        if len(self.points) >= 2:
+        if len(points) >= 2:
             # Find which segment contains the 50% distance mark
             total_length = self._get_total_length()
             if total_length > 0:
@@ -352,9 +362,9 @@ class Edge(SpellGraphEntity):
                 middle_segment_idx = 0
 
                 # Find the segment that contains the midpoint
-                for i in range(len(self.points) - 1):
-                    p1 = self.points[i]
-                    p2 = self.points[i + 1]
+                for i in range(len(points) - 1):
+                    p1 = points[i]
+                    p2 = points[i + 1]
                     dx = p2[0] - p1[0]
                     dy = p2[1] - p1[1]
                     segment_length = math.sqrt(dx * dx + dy * dy)
@@ -366,8 +376,8 @@ class Edge(SpellGraphEntity):
                     current_distance += segment_length
 
                 # Get the two points of the segment containing the midpoint
-                p1 = self.points[middle_segment_idx]
-                p2 = self.points[middle_segment_idx + 1]
+                p1 = points[middle_segment_idx]
+                p2 = points[middle_segment_idx + 1]
 
                 # Position arrow at midpoint of this segment (not at the exact distance point)
                 arrow_x = (p1[0] + p2[0]) / 2

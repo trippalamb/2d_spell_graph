@@ -2,12 +2,13 @@
 from enum import Enum
 import arcade
 import math
-from typing import Dict, Any, TYPE_CHECKING
+from typing import Dict, Any, List, Tuple, TYPE_CHECKING
 
 from src.core.entity import SpellGraphEntity
 
 if TYPE_CHECKING:
     from src.simulation.transform import CoordinateTransform
+    from src.core.edge import Edge, EdgeDirection
 
 
 class NodeType(Enum):
@@ -25,6 +26,7 @@ class Node(SpellGraphEntity):
         node_type: Type of the node (enum)
         force: Current force value
         instability: Accumulated force from other nodes
+        edges: List of (edge, direction) tuples for attached edges
     """
 
     def __init__(self, x: float, y: float, node_type: NodeType = NodeType.BASIC, entity_id: str = None):
@@ -47,6 +49,17 @@ class Node(SpellGraphEntity):
         self.force = 0.0
         self.instability = 0.0
         self.radius = 15  # Visual radius in world units
+        self.edges: List[Tuple['Edge', 'EdgeDirection']] = []  # List of (edge, direction) tuples
+
+    def add_edge(self, edge: 'Edge', direction: 'EdgeDirection'):
+        """
+        Add an edge connected to this node.
+
+        Args:
+            edge: The edge to add
+            direction: Whether this is incoming or outgoing
+        """
+        self.edges.append((edge, direction))
 
     def get_color(self) -> tuple:
         """
