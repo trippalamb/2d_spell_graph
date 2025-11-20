@@ -66,21 +66,21 @@ class InfoWindow:
 
         x, y = self.position
 
-        # Draw background rectangle (Arcade 3.0 API uses left, right, top, bottom)
-        arcade.draw_lrtb_rectangle_filled(
+        # Draw background rectangle (Arcade 3.0 API uses left, right, bottom, top)
+        arcade.draw_lrbt_rectangle_filled(
             x,
             x + window_width,
-            y,
             y - window_height,
+            y,
             self.background_color
         )
 
         # Draw border
-        arcade.draw_lrtb_rectangle_outline(
+        arcade.draw_lrbt_rectangle_outline(
             x,
             x + window_width,
-            y,
             y - window_height,
+            y,
             self.border_color,
             2
         )
