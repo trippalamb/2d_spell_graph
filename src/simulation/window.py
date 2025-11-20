@@ -47,6 +47,13 @@ class GraphSimulation(arcade.Window):
         self.mouse_y = 0
         self.hovered_entity: Optional[SpellGraphEntity] = None
 
+        # Panning state
+        self.is_panning = False
+        self.pan_start_x = 0
+        self.pan_start_y = 0
+        self.pan_start_offset_x = 0
+        self.pan_start_offset_y = 0
+
         # Info window for entity hover
         self.info_window = InfoWindow()
 
@@ -219,6 +226,44 @@ class GraphSimulation(arcade.Window):
         """
         self.mouse_x = x
         self.mouse_y = y
+
+        # Handle panning when right mouse button is held
+        if self.is_panning:
+            # Update the transform offset based on mouse movement
+            self.transform.offset_x = self.pan_start_offset_x + (x - self.pan_start_x)
+            self.transform.offset_y = self.pan_start_offset_y + (y - self.pan_start_y)
+
+    def on_mouse_press(self, x: float, y: float, button: int, modifiers: int):
+        """
+        Handle mouse button press.
+
+        Args:
+            x: Mouse X position
+            y: Mouse Y position
+            button: Mouse button that was pressed
+            modifiers: Keyboard modifiers
+        """
+        # Start panning on right mouse button
+        if button == arcade.MOUSE_BUTTON_RIGHT:
+            self.is_panning = True
+            self.pan_start_x = x
+            self.pan_start_y = y
+            self.pan_start_offset_x = self.transform.offset_x
+            self.pan_start_offset_y = self.transform.offset_y
+
+    def on_mouse_release(self, x: float, y: float, button: int, modifiers: int):
+        """
+        Handle mouse button release.
+
+        Args:
+            x: Mouse X position
+            y: Mouse Y position
+            button: Mouse button that was released
+            modifiers: Keyboard modifiers
+        """
+        # Stop panning on right mouse button release
+        if button == arcade.MOUSE_BUTTON_RIGHT:
+            self.is_panning = False
 
     def _update_hovered_entity(self):
         """Update which entity is currently being hovered."""
