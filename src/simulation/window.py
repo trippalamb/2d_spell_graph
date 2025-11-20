@@ -65,13 +65,14 @@ class GraphSimulation(arcade.Window):
         restart_button.on_click = self._on_restart
         v_box.add(restart_button)
 
-        # Create an anchor widget to position the buttons
-        anchor = arcade.gui.UIAnchorWidget(
+        # Create an anchor layout to position the buttons
+        anchor = arcade.gui.UIAnchorLayout()
+        anchor.add(
+            child=v_box,
             anchor_x="left",
             anchor_y="top",
             align_x=20,
-            align_y=-20,
-            child=v_box
+            align_y=-20
         )
 
         self.ui_manager.add(anchor)
