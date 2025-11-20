@@ -236,17 +236,17 @@ class Edge:
             p2 = self.points[i + 1]
             arcade.draw_line(p1[0], p1[1], p2[0], p2[1], color, 3)
 
-        # Draw directional arrow slightly past the midpoint
+        # Draw directional arrow at the midpoint
         total_length = self._get_total_length()
         if total_length > 0:
-            # Position arrow at 55% along the path (slightly past center)
-            arrow_distance = total_length * 0.55
+            # Position arrow at 50% along the path (exact center)
+            arrow_distance = total_length * 0.5
             arrow_pos, arrow_angle = self._get_point_at_distance(arrow_distance)
 
-            # Offset the arrow perpendicular to the path
-            offset_distance = 15  # pixels offset from the path
+            # Small offset perpendicular to the path for visibility
+            offset_distance = 12  # pixels offset from the path
             offset_angle = arrow_angle + math.pi / 2  # perpendicular to path
             offset_x = arrow_pos[0] + offset_distance * math.cos(offset_angle)
             offset_y = arrow_pos[1] + offset_distance * math.sin(offset_angle)
 
-            self._draw_arrow((offset_x, offset_y), arrow_angle, color)
+            self._draw_arrow((offset_x, offset_y), arrow_angle, color, arrow_size=10)
