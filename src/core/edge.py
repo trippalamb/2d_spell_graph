@@ -342,17 +342,30 @@ class Edge(SpellGraphEntity):
 
             arcade.draw_line(p1_screen[0], p1_screen[1], p2_screen[0], p2_screen[1], color, 3)
 
-        # Draw directional arrow at the midpoint
-        total_length = self._get_total_length()
-        if total_length > 0:
-            # Position arrow at 50% along the path (exact center)
-            arrow_distance = total_length * 0.5
-            arrow_pos, arrow_angle = self._get_point_at_distance(arrow_distance)
+        # Draw directional arrow on the middle segment
+        if len(self.points) >= 2:
+            # Find the middle segment (avoid placing arrows at nodes)
+            # For N points, there are N-1 segments. Middle segment is at index (N-1)//2
+            num_segments = len(self.points) - 1
+            middle_segment_idx = num_segments // 2
+
+            # Get the two points of the middle segment
+            p1 = self.points[middle_segment_idx]
+            p2 = self.points[middle_segment_idx + 1]
+
+            # Position arrow at midpoint of this segment
+            arrow_x = (p1[0] + p2[0]) / 2
+            arrow_y = (p1[1] + p2[1]) / 2
+
+            # Calculate direction angle
+            dx = p2[0] - p1[0]
+            dy = p2[1] - p1[1]
+            arrow_angle = math.atan2(dy, dx)
 
             # Small offset perpendicular to the path for visibility
             offset_distance = 12  # world units offset from the path
             offset_angle = arrow_angle + math.pi / 2  # perpendicular to path
-            offset_x = arrow_pos[0] + offset_distance * math.cos(offset_angle)
-            offset_y = arrow_pos[1] + offset_distance * math.sin(offset_angle)
+            offset_x = arrow_x + offset_distance * math.cos(offset_angle)
+            offset_y = arrow_y + offset_distance * math.sin(offset_angle)
 
             self._draw_arrow((offset_x, offset_y), arrow_angle, color, transform, arrow_size=10)
