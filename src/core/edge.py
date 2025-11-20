@@ -112,9 +112,10 @@ class Edge(SpellGraphEntity):
         Returns:
             Average tension value (0.0 to 1.0)
         """
-        if not self.tension_values:
+        tension_values = self._calculate_tensions()
+        if not tension_values:
             return 0.0
-        return sum(self.tension_values) / len(self.tension_values)
+        return sum(tension_values) / len(tension_values)
 
     def get_color(self) -> tuple:
         """
