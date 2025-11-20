@@ -167,24 +167,16 @@ class CursorManager:
         self.edge_graph = {i: [] for i in range(len(nodes))}
 
         for edge_idx, edge in enumerate(edges):
-            # Find the starting node of this edge
-            start_point = edge.points[0]
-            end_point = edge.points[-1]
-
+            # Edges now have direct references to start_node and end_node
+            # Find the indices of these nodes in the nodes list
             source_idx = None
             target_idx = None
 
-            # Find source node
             for node_idx, node in enumerate(nodes):
-                if abs(node.x - start_point[0]) < 1 and abs(node.y - start_point[1]) < 1:
+                if node is edge.start_node:
                     source_idx = node_idx
-                    break
-
-            # Find target node
-            for node_idx, node in enumerate(nodes):
-                if abs(node.x - end_point[0]) < 1 and abs(node.y - end_point[1]) < 1:
+                if node is edge.end_node:
                     target_idx = node_idx
-                    break
 
             # Add to edge graph
             if source_idx is not None and target_idx is not None:
