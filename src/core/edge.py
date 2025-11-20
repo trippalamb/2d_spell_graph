@@ -129,8 +129,102 @@ class Edge:
 
         return (r, g, b)
 
+    def _get_total_length(self) -> float:
+        """
+        Calculate the total length of the edge path.
+
+        Returns:
+            Total path length in pixels
+        """
+        total_length = 0.0
+        for i in range(len(self.points) - 1):
+            p1 = self.points[i]
+            p2 = self.points[i + 1]
+            dx = p2[0] - p1[0]
+            dy = p2[1] - p1[1]
+            total_length += math.sqrt(dx * dx + dy * dy)
+        return total_length
+
+    def _get_point_at_distance(self, target_distance: float) -> Tuple[Tuple[float, float], float]:
+        """
+        Get the point along the path at a specific distance from the start.
+
+        Args:
+            target_distance: Distance along path from start
+
+        Returns:
+            Tuple of (point, angle) where angle is the direction of the path at that point
+        """
+        current_distance = 0.0
+
+        for i in range(len(self.points) - 1):
+            p1 = self.points[i]
+            p2 = self.points[i + 1]
+
+            dx = p2[0] - p1[0]
+            dy = p2[1] - p1[1]
+            segment_length = math.sqrt(dx * dx + dy * dy)
+
+            if current_distance + segment_length >= target_distance:
+                # The target point is on this segment
+                remaining = target_distance - current_distance
+                t = remaining / segment_length if segment_length > 0 else 0
+
+                # Interpolate position
+                x = p1[0] + t * dx
+                y = p1[1] + t * dy
+
+                # Calculate angle (direction of the segment)
+                angle = math.atan2(dy, dx)
+
+                return ((x, y), angle)
+
+            current_distance += segment_length
+
+        # If we get here, return the last point
+        if len(self.points) >= 2:
+            p1 = self.points[-2]
+            p2 = self.points[-1]
+            angle = math.atan2(p2[1] - p1[1], p2[0] - p1[0])
+            return (p2, angle)
+
+        return (self.points[0], 0.0)
+
+    def _draw_arrow(self, position: Tuple[float, float], angle: float, color: tuple, arrow_size: float = 12):
+        """
+        Draw a directional arrow at a specific position.
+
+        Args:
+            position: (x, y) position of the arrow
+            angle: Angle in radians for arrow direction
+            color: RGB tuple for arrow color
+            arrow_size: Size of the arrow in pixels
+        """
+        x, y = position
+
+        # Arrow tip is at the position
+        tip_x, tip_y = x, y
+
+        # Calculate the two back points of the arrow
+        back_angle1 = angle + math.pi - math.pi / 6  # 150 degrees
+        back_angle2 = angle + math.pi + math.pi / 6  # 210 degrees
+
+        back_x1 = tip_x + arrow_size * math.cos(back_angle1)
+        back_y1 = tip_y + arrow_size * math.sin(back_angle1)
+
+        back_x2 = tip_x + arrow_size * math.cos(back_angle2)
+        back_y2 = tip_y + arrow_size * math.sin(back_angle2)
+
+        # Draw filled triangle
+        arcade.draw_triangle_filled(
+            tip_x, tip_y,
+            back_x1, back_y1,
+            back_x2, back_y2,
+            color
+        )
+
     def draw(self):
-        """Draw the edge on screen."""
+        """Draw the edge on screen with directional arrow."""
         if len(self.points) < 2:
             return
 
@@ -141,3 +235,18 @@ class Edge:
             p1 = self.points[i]
             p2 = self.points[i + 1]
             arcade.draw_line(p1[0], p1[1], p2[0], p2[1], color, 3)
+
+        # Draw directional arrow slightly past the midpoint
+        total_length = self._get_total_length()
+        if total_length > 0:
+            # Position arrow at 55% along the path (slightly past center)
+            arrow_distance = total_length * 0.55
+            arrow_pos, arrow_angle = self._get_point_at_distance(arrow_distance)
+
+            # Offset the arrow perpendicular to the path
+            offset_distance = 15  # pixels offset from the path
+            offset_angle = arrow_angle + math.pi / 2  # perpendicular to path
+            offset_x = arrow_pos[0] + offset_distance * math.cos(offset_angle)
+            offset_y = arrow_pos[1] + offset_distance * math.sin(offset_angle)
+
+            self._draw_arrow((offset_x, offset_y), arrow_angle, color)

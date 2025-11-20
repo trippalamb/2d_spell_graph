@@ -6,7 +6,8 @@ if TYPE_CHECKING:
     from src.core.node import Node
 
 # Gravitational constant (scaled for simulation)
-G = 1000.0
+# Increased to make color changes visible at typical screen distances (100-1000px)
+G = 500000.0
 
 
 def calculate_gravitational_force(node1: 'Node', node2: 'Node') -> float:

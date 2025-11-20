@@ -47,6 +47,10 @@ class GraphSimulation(arcade.Window):
 
         Expected format:
         {
+            "window": {
+                "width": 1920,
+                "height": 1080
+            },
             "nodes": [
                 {"x": 100, "y": 100, "type": "basic"},
                 ...
@@ -62,6 +66,14 @@ class GraphSimulation(arcade.Window):
         """
         with open(config_path, 'r') as f:
             config = json.load(f)
+
+        # Load window settings if specified
+        if 'window' in config:
+            window_config = config['window']
+            new_width = window_config.get('width', self.width)
+            new_height = window_config.get('height', self.height)
+            if new_width != self.width or new_height != self.height:
+                self.set_size(new_width, new_height)
 
         # Load nodes
         self.nodes = []
