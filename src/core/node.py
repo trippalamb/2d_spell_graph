@@ -1,7 +1,10 @@
 """Node class for the spell graph simulation."""
 from enum import Enum
 import arcade
-from typing import TYPE_CHECKING
+import math
+from typing import Dict, Any, TYPE_CHECKING
+
+from src.core.entity import SpellGraphEntity
 
 if TYPE_CHECKING:
     from src.simulation.transform import CoordinateTransform
@@ -12,7 +15,7 @@ class NodeType(Enum):
     BASIC = "basic"
 
 
-class Node:
+class Node(SpellGraphEntity):
     """
     Represents a node in the spatial physics graph.
 
@@ -24,7 +27,7 @@ class Node:
         instability: Accumulated force from other nodes
     """
 
-    def __init__(self, x: float, y: float, node_type: NodeType = NodeType.BASIC):
+    def __init__(self, x: float, y: float, node_type: NodeType = NodeType.BASIC, entity_id: str = None):
         """
         Initialize a node.
 
@@ -32,7 +35,12 @@ class Node:
             x: X position in world coordinates
             y: Y position in world coordinates
             node_type: Type of node (default: BASIC)
+            entity_id: Unique identifier (auto-generated if None)
         """
+        if entity_id is None:
+            entity_id = f"node_{id(self)}"
+        super().__init__(entity_id)
+
         self.x = x
         self.y = y
         self.node_type = node_type
@@ -58,6 +66,38 @@ class Node:
         b = int((1.0 - normalized) * 255)
 
         return (r, g, b)
+
+    def get_info(self) -> Dict[str, Any]:
+        """
+        Get information about this node for display.
+
+        Returns:
+            Dictionary containing node information
+        """
+        return {
+            "ID": self.entity_id,
+            "Type": "Node",
+            "Node Type": self.node_type.value,
+            "Position": f"({self.x:.1f}, {self.y:.1f})",
+            "Force": f"{self.force:.2f}",
+            "Instability": f"{self.instability:.2f}",
+            "Radius": f"{self.radius:.1f}"
+        }
+
+    def contains_point(self, x: float, y: float, transform: 'CoordinateTransform') -> bool:
+        """
+        Check if a point (in world coordinates) is within this node.
+
+        Args:
+            x: X coordinate in world space
+            y: Y coordinate in world space
+            transform: Coordinate transform (not used for nodes, but required by interface)
+
+        Returns:
+            True if point is within node's radius
+        """
+        distance = math.sqrt((x - self.x) ** 2 + (y - self.y) ** 2)
+        return distance <= self.radius
 
     def draw(self, transform: 'CoordinateTransform'):
         """

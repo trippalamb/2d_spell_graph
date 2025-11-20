@@ -1,14 +1,15 @@
 """Main simulation window for the spell graph."""
 import arcade
 import arcade.gui
-from typing import List
+from typing import List, Optional
 import json
 import os
 
-from src.core import Node, NodeType, Edge
+from src.core import Node, NodeType, Edge, SpellGraphEntity
 from src.physics import update_node_forces
 from src.simulation.cursor import CursorManager
 from src.simulation.transform import CoordinateTransform
+from src.simulation.info_window import InfoWindow
 
 
 class GraphSimulation(arcade.Window):
@@ -41,6 +42,14 @@ class GraphSimulation(arcade.Window):
         # Coordinate transform (world scale defaults to 1.0)
         self.transform = CoordinateTransform(world_scale=1.0)
 
+        # Mouse tracking
+        self.mouse_x = 0
+        self.mouse_y = 0
+        self.hovered_entity: Optional[SpellGraphEntity] = None
+
+        # Info window for entity hover
+        self.info_window = InfoWindow()
+
         # UI Manager
         self.ui_manager = arcade.gui.UIManager()
         self.ui_manager.enable()
@@ -69,6 +78,22 @@ class GraphSimulation(arcade.Window):
         restart_button.on_click = self._on_restart
         v_box.add(restart_button)
 
+        # Zoom in button
+        zoom_in_button = arcade.gui.UIFlatButton(
+            text="Zoom In (+)",
+            width=120
+        )
+        zoom_in_button.on_click = self._on_zoom_in
+        v_box.add(zoom_in_button)
+
+        # Zoom out button
+        zoom_out_button = arcade.gui.UIFlatButton(
+            text="Zoom Out (-)",
+            width=120
+        )
+        zoom_out_button.on_click = self._on_zoom_out
+        v_box.add(zoom_out_button)
+
         # Create an anchor layout to position the buttons
         anchor = arcade.gui.UIAnchorLayout()
         anchor.add(
@@ -93,6 +118,14 @@ class GraphSimulation(arcade.Window):
         """Handle restart button click."""
         self.cursor_manager.restart(self.nodes)
         self.play_pause_button.text = "Pause"
+
+    def _on_zoom_in(self, event):
+        """Handle zoom in button click."""
+        self.transform.world_scale *= 1.2
+
+    def _on_zoom_out(self, event):
+        """Handle zoom out button click."""
+        self.transform.world_scale /= 1.2
 
     def setup(self, config_path: str = "configs/default.json"):
         """
@@ -171,6 +204,57 @@ class GraphSimulation(arcade.Window):
         # Update cursor traversal
         self.cursor_manager.update(delta_time, self.nodes, self.edges)
 
+        # Update hovered entity
+        self._update_hovered_entity()
+
+    def on_mouse_motion(self, x: float, y: float, dx: float, dy: float):
+        """
+        Handle mouse motion.
+
+        Args:
+            x: Mouse X position
+            y: Mouse Y position
+            dx: Change in X
+            dy: Change in Y
+        """
+        self.mouse_x = x
+        self.mouse_y = y
+
+    def _update_hovered_entity(self):
+        """Update which entity is currently being hovered."""
+        # Convert screen coordinates to world coordinates
+        world_x, world_y = self.transform.screen_to_world(self.mouse_x, self.mouse_y)
+
+        # Check all entities in priority order (cursor > node > edge)
+        # Check cursors first (highest priority)
+        for cursor in self.cursor_manager.cursors:
+            if cursor.contains_point(world_x, world_y, self.transform):
+                if self.hovered_entity != cursor:
+                    self.hovered_entity = cursor
+                    self.info_window.set_info(cursor.get_info(), self.mouse_x, self.mouse_y)
+                return
+
+        # Check nodes
+        for node in self.nodes:
+            if node.contains_point(world_x, world_y, self.transform):
+                if self.hovered_entity != node:
+                    self.hovered_entity = node
+                    self.info_window.set_info(node.get_info(), self.mouse_x, self.mouse_y)
+                return
+
+        # Check edges (lowest priority)
+        for edge in self.edges:
+            if edge.contains_point(world_x, world_y, self.transform):
+                if self.hovered_entity != edge:
+                    self.hovered_entity = edge
+                    self.info_window.set_info(edge.get_info(), self.mouse_x, self.mouse_y)
+                return
+
+        # No entity hovered
+        if self.hovered_entity is not None:
+            self.hovered_entity = None
+            self.info_window.clear()
+
     def on_draw(self):
         """Render the graph."""
         # Clear the screen
@@ -189,3 +273,6 @@ class GraphSimulation(arcade.Window):
 
         # Draw UI
         self.ui_manager.draw()
+
+        # Draw info window (on top of everything)
+        self.info_window.draw()

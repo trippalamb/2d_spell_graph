@@ -1,13 +1,14 @@
 """Cursor for traversing the graph along directed edges."""
 import arcade
-from typing import List, Tuple, Optional, TYPE_CHECKING
-from src.core import Node, Edge
+import math
+from typing import List, Tuple, Optional, Dict, Any, TYPE_CHECKING
+from src.core import Node, Edge, SpellGraphEntity
 
 if TYPE_CHECKING:
     from src.simulation.transform import CoordinateTransform
 
 
-class Cursor:
+class Cursor(SpellGraphEntity):
     """
     A cursor that travels along an edge from one node to another.
 
@@ -26,7 +27,7 @@ class Cursor:
     """
 
     def __init__(self, source_node_index: int, target_node_index: int,
-                 edge_index: int, speed: float = 100.0, color: tuple = (255, 0, 255)):
+                 edge_index: int, speed: float = 100.0, color: tuple = (255, 0, 255), entity_id: str = None):
         """
         Initialize a cursor.
 
@@ -36,7 +37,12 @@ class Cursor:
             edge_index: Index of the edge to traverse
             speed: Traversal speed in pixels per second
             color: RGB tuple for cursor color
+            entity_id: Unique identifier (auto-generated if None)
         """
+        if entity_id is None:
+            entity_id = f"cursor_{id(self)}"
+        super().__init__(entity_id)
+
         self.source_node_index = source_node_index
         self.target_node_index = target_node_index
         self.edge_index = edge_index
@@ -72,6 +78,43 @@ class Cursor:
             # Update position along path
             self.position = edge._get_point_at_distance(self.distance_traveled)[0]
             return False
+
+    def get_info(self) -> Dict[str, Any]:
+        """
+        Get information about this cursor for display.
+
+        Returns:
+            Dictionary containing cursor information
+        """
+        return {
+            "ID": self.entity_id,
+            "Type": "Cursor",
+            "Source Node": f"#{self.source_node_index}",
+            "Target Node": f"#{self.target_node_index}",
+            "Edge": f"#{self.edge_index}",
+            "Position": f"({self.position[0]:.1f}, {self.position[1]:.1f})",
+            "Distance Traveled": f"{self.distance_traveled:.1f}",
+            "Speed": f"{self.speed:.1f}",
+            "Alive": str(self.is_alive)
+        }
+
+    def contains_point(self, x: float, y: float, transform: 'CoordinateTransform') -> bool:
+        """
+        Check if a point (in world coordinates) is within this cursor.
+
+        Args:
+            x: X coordinate in world space
+            y: Y coordinate in world space
+            transform: Coordinate transform (not used for cursors, but required by interface)
+
+        Returns:
+            True if point is within cursor's radius
+        """
+        if not self.is_alive:
+            return False
+
+        distance = math.sqrt((x - self.position[0]) ** 2 + (y - self.position[1]) ** 2)
+        return distance <= self.radius
 
     def draw(self, transform: 'CoordinateTransform'):
         """

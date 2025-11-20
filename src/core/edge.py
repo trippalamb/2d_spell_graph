@@ -2,13 +2,15 @@
 import math
 import re
 import arcade
-from typing import List, Tuple, TYPE_CHECKING
+from typing import List, Tuple, Dict, Any, TYPE_CHECKING
+
+from src.core.entity import SpellGraphEntity
 
 if TYPE_CHECKING:
     from src.simulation.transform import CoordinateTransform
 
 
-class Edge:
+class Edge(SpellGraphEntity):
     """
     Represents an edge in the spatial physics graph.
 
@@ -21,13 +23,18 @@ class Edge:
         tension_values: List of tension values at each bend point
     """
 
-    def __init__(self, path: str):
+    def __init__(self, path: str, entity_id: str = None):
         """
         Initialize an edge from a path string.
 
         Args:
             path: SVG path string (D3 format)
+            entity_id: Unique identifier (auto-generated if None)
         """
+        if entity_id is None:
+            entity_id = f"edge_{id(self)}"
+        super().__init__(entity_id)
+
         self.path = path
         self.points = self._parse_path(path)
         self.tension_values = self._calculate_tensions()
@@ -131,6 +138,86 @@ class Edge:
             b = 0
 
         return (r, g, b)
+
+    def get_info(self) -> Dict[str, Any]:
+        """
+        Get information about this edge for display.
+
+        Returns:
+            Dictionary containing edge information
+        """
+        total_length = self._get_total_length()
+        avg_tension = self.get_average_tension()
+
+        return {
+            "ID": self.entity_id,
+            "Type": "Edge",
+            "Path": self.path[:40] + "..." if len(self.path) > 40 else self.path,
+            "Points": f"{len(self.points)} points",
+            "Length": f"{total_length:.1f}",
+            "Avg Tension": f"{avg_tension:.3f}",
+            "Max Tension": f"{max(self.tension_values):.3f}" if self.tension_values else "0.000"
+        }
+
+    def contains_point(self, x: float, y: float, transform: 'CoordinateTransform') -> bool:
+        """
+        Check if a point (in world coordinates) is near this edge.
+
+        Args:
+            x: X coordinate in world space
+            y: Y coordinate in world space
+            transform: Coordinate transform for distance calculations
+
+        Returns:
+            True if point is within threshold distance of the edge
+        """
+        threshold = 10  # world units
+
+        # Check distance to each line segment
+        for i in range(len(self.points) - 1):
+            p1 = self.points[i]
+            p2 = self.points[i + 1]
+
+            # Calculate distance from point to line segment
+            dist = self._point_to_segment_distance(x, y, p1[0], p1[1], p2[0], p2[1])
+            if dist <= threshold:
+                return True
+
+        return False
+
+    def _point_to_segment_distance(self, px: float, py: float,
+                                   x1: float, y1: float, x2: float, y2: float) -> float:
+        """
+        Calculate distance from a point to a line segment.
+
+        Args:
+            px, py: Point coordinates
+            x1, y1: Segment start
+            x2, y2: Segment end
+
+        Returns:
+            Distance from point to segment
+        """
+        # Vector from segment start to end
+        dx = x2 - x1
+        dy = y2 - y1
+
+        # Length squared of segment
+        length_sq = dx * dx + dy * dy
+
+        if length_sq == 0:
+            # Segment is a point
+            return math.sqrt((px - x1) ** 2 + (py - y1) ** 2)
+
+        # Calculate projection parameter
+        t = max(0, min(1, ((px - x1) * dx + (py - y1) * dy) / length_sq))
+
+        # Calculate closest point on segment
+        closest_x = x1 + t * dx
+        closest_y = y1 + t * dy
+
+        # Return distance to closest point
+        return math.sqrt((px - closest_x) ** 2 + (py - closest_y) ** 2)
 
     def _get_total_length(self) -> float:
         """
