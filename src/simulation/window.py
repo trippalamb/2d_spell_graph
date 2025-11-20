@@ -132,6 +132,30 @@ class GraphSimulation(arcade.Window):
         restart_button.on_click = self._on_restart
         v_box.add(restart_button)
 
+        # Repath Edges button
+        repath_button = arcade.gui.UIFlatButton(
+            text="Repath Edges",
+            width=120
+        )
+        repath_button.on_click = self._on_repath_edges
+        v_box.add(repath_button)
+
+        # Save button
+        save_button = arcade.gui.UIFlatButton(
+            text="Save Spell",
+            width=120
+        )
+        save_button.on_click = self._on_save
+        v_box.add(save_button)
+
+        # Load button
+        load_button = arcade.gui.UIFlatButton(
+            text="Load Spell",
+            width=120
+        )
+        load_button.on_click = self._on_load
+        v_box.add(load_button)
+
         # Create an anchor layout to position the buttons
         anchor = arcade.gui.UIAnchorLayout()
         anchor.add(
@@ -156,6 +180,141 @@ class GraphSimulation(arcade.Window):
         """Handle restart button click."""
         self.cursor_manager.restart(self.nodes)
         self.play_pause_button.text = "Pause"
+
+    def _on_repath_edges(self, event):
+        """Handle repath edges button click."""
+        self.repath_all_edges()
+        # Rebuild edge graph after repath
+        self.cursor_manager.build_edge_graph(self.nodes, self.edges)
+
+    def _on_save(self, event):
+        """Handle save button click."""
+        self.save_spell()
+
+    def _on_load(self, event):
+        """Handle load button click."""
+        self.load_spell()
+
+    def repath_all_edges(self, num_segments: int = 10):
+        """
+        Repath all edges with evenly-spaced intermediate segments.
+
+        Args:
+            num_segments: Number of segments to create (default 10)
+        """
+        for edge in self.edges:
+            # Calculate straight-line control points
+            start_x, start_y = edge.start_node.x, edge.start_node.y
+            end_x, end_y = edge.end_node.x, edge.end_node.y
+
+            # Create num_segments - 1 intermediate control points
+            control_points = []
+            for i in range(1, num_segments):
+                t = i / num_segments
+                x = start_x + t * (end_x - start_x)
+                y = start_y + t * (end_y - start_y)
+                control_points.append((x, y))
+
+            edge.control_points = control_points
+
+    def save_spell(self):
+        """Save current spell configuration to a file."""
+        try:
+            # Use tkinter for file dialog
+            import tkinter as tk
+            from tkinter import filedialog
+
+            # Create a temporary root window (hidden)
+            root = tk.Tk()
+            root.withdraw()
+            root.attributes('-topmost', True)
+
+            # Show save dialog
+            filename = filedialog.asksaveasfilename(
+                title="Save Spell",
+                defaultextension=".json",
+                filetypes=[("JSON files", "*.json"), ("All files", "*.*")],
+                initialdir="configs"
+            )
+
+            root.destroy()
+
+            if filename:
+                # Build configuration dictionary
+                config = {
+                    "window": {
+                        "width": self.width,
+                        "height": self.height,
+                        "world_scale": self.transform.world_scale
+                    },
+                    "nodes": [],
+                    "edges": []
+                }
+
+                # Save nodes
+                for node in self.nodes:
+                    config["nodes"].append({
+                        "x": node.x,
+                        "y": node.y,
+                        "type": node.node_type.value
+                    })
+
+                # Save edges as SVG paths
+                for edge in self.edges:
+                    # Build SVG path string
+                    points = edge.get_points()
+                    if len(points) < 2:
+                        continue
+
+                    # Start with M (move to)
+                    path = f"M {points[0][0]},{points[0][1]}"
+
+                    # Add L (line to) for each subsequent point
+                    for point in points[1:]:
+                        path += f" L {point[0]},{point[1]}"
+
+                    config["edges"].append({"path": path})
+
+                # Write to file
+                with open(filename, 'w') as f:
+                    json.dump(config, f, indent=2)
+
+                print(f"Spell saved to {filename}")
+
+        except Exception as e:
+            print(f"Error saving spell: {e}")
+
+    def load_spell(self):
+        """Load a spell configuration from a file."""
+        try:
+            # Use tkinter for file dialog
+            import tkinter as tk
+            from tkinter import filedialog
+
+            # Create a temporary root window (hidden)
+            root = tk.Tk()
+            root.withdraw()
+            root.attributes('-topmost', True)
+
+            # Show open dialog
+            filename = filedialog.askopenfilename(
+                title="Load Spell",
+                filetypes=[("JSON files", "*.json"), ("All files", "*.*")],
+                initialdir="configs"
+            )
+
+            root.destroy()
+
+            if filename:
+                # Load configuration
+                self.load_config(filename)
+                # Rebuild edge graph and restart cursors
+                self.cursor_manager.build_edge_graph(self.nodes, self.edges)
+                self.cursor_manager.restart(self.nodes)
+                print(f"Spell loaded from {filename}")
+
+        except Exception as e:
+            print(f"Error loading spell: {e}")
 
     def setup(self, config_path: str = "configs/default.json"):
         """
