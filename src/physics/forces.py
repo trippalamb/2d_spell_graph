@@ -1,14 +1,15 @@
 """Physics calculations for the spell graph simulation."""
 import math
-from typing import List
-from node import Node
+from typing import List, TYPE_CHECKING
 
+if TYPE_CHECKING:
+    from src.core.node import Node
 
 # Gravitational constant (scaled for simulation)
 G = 1000.0
 
 
-def calculate_gravitational_force(node1: Node, node2: Node) -> float:
+def calculate_gravitational_force(node1: 'Node', node2: 'Node') -> float:
     """
     Calculate gravitational force between two nodes.
 
@@ -37,7 +38,7 @@ def calculate_gravitational_force(node1: Node, node2: Node) -> float:
     return force
 
 
-def update_node_forces(nodes: List[Node]):
+def update_node_forces(nodes: List['Node']):
     """
     Update force and instability values for all nodes.
 

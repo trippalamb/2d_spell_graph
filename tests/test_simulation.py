@@ -1,8 +1,7 @@
 """Test script to verify simulation logic without GUI."""
 import json
-from node import Node, NodeType
-from edge import Edge
-from physics import update_node_forces
+from src.core import Node, NodeType, Edge
+from src.physics import update_node_forces
 
 
 def test_nodes():
@@ -70,7 +69,7 @@ def test_config_loading():
     """Test configuration file loading."""
     print("Testing Configuration Loading...")
 
-    with open('config.json', 'r') as f:
+    with open('configs/default.json', 'r') as f:
         config = json.load(f)
 
     print(f"  Loaded {len(config['nodes'])} nodes")
@@ -121,7 +120,7 @@ def main():
     print("All tests passed! ✓")
     print("=" * 60)
     print("\nTo run the visual simulation:")
-    print("  python3 simulation.py")
+    print("  python3 main.py")
     print()
 
 

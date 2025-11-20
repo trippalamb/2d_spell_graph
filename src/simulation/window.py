@@ -1,10 +1,11 @@
 """Main simulation window for the spell graph."""
 import arcade
 from typing import List
-from node import Node, NodeType
-from edge import Edge
-from physics import update_node_forces
 import json
+import os
+
+from src.core import Node, NodeType, Edge
+from src.physics import update_node_forces
 
 
 class GraphSimulation(arcade.Window):
@@ -31,7 +32,7 @@ class GraphSimulation(arcade.Window):
         self.nodes: List[Node] = []
         self.edges: List[Edge] = []
 
-    def setup(self, config_path: str = "config.json"):
+    def setup(self, config_path: str = "configs/default.json"):
         """
         Set up the simulation from a configuration file.
 
@@ -97,14 +98,3 @@ class GraphSimulation(arcade.Window):
         # Draw nodes
         for node in self.nodes:
             node.draw()
-
-
-def main():
-    """Main entry point for the simulation."""
-    window = GraphSimulation()
-    window.setup()
-    arcade.run()
-
-
-if __name__ == "__main__":
-    main()
