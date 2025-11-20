@@ -8,6 +8,7 @@ import os
 from src.core import Node, NodeType, Edge
 from src.physics import update_node_forces
 from src.simulation.cursor import CursorManager
+from src.simulation.transform import CoordinateTransform
 
 
 class GraphSimulation(arcade.Window):
@@ -36,6 +37,9 @@ class GraphSimulation(arcade.Window):
 
         # Cursor system
         self.cursor_manager = CursorManager()
+
+        # Coordinate transform (world scale defaults to 1.0)
+        self.transform = CoordinateTransform(world_scale=1.0)
 
         # UI Manager
         self.ui_manager = arcade.gui.UIManager()
@@ -137,6 +141,10 @@ class GraphSimulation(arcade.Window):
             if new_width != self.width or new_height != self.height:
                 self.set_size(new_width, new_height)
 
+            # Load world scale
+            world_scale = window_config.get('world_scale', 1.0)
+            self.transform = CoordinateTransform(world_scale=world_scale)
+
         # Load nodes
         self.nodes = []
         for node_data in config.get('nodes', []):
@@ -170,14 +178,14 @@ class GraphSimulation(arcade.Window):
 
         # Draw edges first (so they appear behind nodes)
         for edge in self.edges:
-            edge.draw()
+            edge.draw(self.transform)
 
         # Draw nodes
         for node in self.nodes:
-            node.draw()
+            node.draw(self.transform)
 
         # Draw cursors
-        self.cursor_manager.draw()
+        self.cursor_manager.draw(self.transform)
 
         # Draw UI
         self.ui_manager.draw()

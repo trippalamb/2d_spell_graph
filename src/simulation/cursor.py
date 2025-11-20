@@ -1,7 +1,10 @@
 """Cursor for traversing the graph along directed edges."""
 import arcade
-from typing import List, Tuple, Optional
+from typing import List, Tuple, Optional, TYPE_CHECKING
 from src.core import Node, Edge
+
+if TYPE_CHECKING:
+    from src.simulation.transform import CoordinateTransform
 
 
 class Cursor:
@@ -70,14 +73,21 @@ class Cursor:
             self.position = edge._get_point_at_distance(self.distance_traveled)[0]
             return False
 
-    def draw(self):
-        """Draw the cursor."""
+    def draw(self, transform: 'CoordinateTransform'):
+        """
+        Draw the cursor.
+
+        Args:
+            transform: Coordinate transform for world-to-screen conversion
+        """
         if self.is_alive:
+            # Convert world position to screen position
+            screen_x, screen_y = transform.world_to_screen(self.position[0], self.position[1])
+            screen_radius = transform.scale_distance(self.radius)
+
             # Draw cursor as filled circle with outline
-            arcade.draw_circle_filled(self.position[0], self.position[1],
-                                     self.radius, self.color)
-            arcade.draw_circle_outline(self.position[0], self.position[1],
-                                       self.radius, arcade.color.BLACK, 2)
+            arcade.draw_circle_filled(screen_x, screen_y, screen_radius, self.color)
+            arcade.draw_circle_outline(screen_x, screen_y, screen_radius, arcade.color.BLACK, 2)
 
 
 class CursorManager:
@@ -194,7 +204,12 @@ class CursorManager:
         for cursor in cursors_to_remove:
             self.cursors.remove(cursor)
 
-    def draw(self):
-        """Draw all cursors."""
+    def draw(self, transform: 'CoordinateTransform'):
+        """
+        Draw all cursors.
+
+        Args:
+            transform: Coordinate transform for world-to-screen conversion
+        """
         for cursor in self.cursors:
-            cursor.draw()
+            cursor.draw(transform)

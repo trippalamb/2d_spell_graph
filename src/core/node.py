@@ -1,6 +1,10 @@
 """Node class for the spell graph simulation."""
 from enum import Enum
 import arcade
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from src.simulation.transform import CoordinateTransform
 
 
 class NodeType(Enum):
@@ -13,8 +17,8 @@ class Node:
     Represents a node in the spatial physics graph.
 
     Attributes:
-        x: X position in screen coordinates
-        y: Y position in screen coordinates
+        x: X position in world coordinates
+        y: Y position in world coordinates
         node_type: Type of the node (enum)
         force: Current force value
         instability: Accumulated force from other nodes
@@ -25,8 +29,8 @@ class Node:
         Initialize a node.
 
         Args:
-            x: X position
-            y: Y position
+            x: X position in world coordinates
+            y: Y position in world coordinates
             node_type: Type of node (default: BASIC)
         """
         self.x = x
@@ -34,7 +38,7 @@ class Node:
         self.node_type = node_type
         self.force = 0.0
         self.instability = 0.0
-        self.radius = 15  # Visual radius for rendering
+        self.radius = 15  # Visual radius in world units
 
     def get_color(self) -> tuple:
         """
@@ -55,12 +59,21 @@ class Node:
 
         return (r, g, b)
 
-    def draw(self):
-        """Draw the node on screen."""
+    def draw(self, transform: 'CoordinateTransform'):
+        """
+        Draw the node on screen.
+
+        Args:
+            transform: Coordinate transform for world-to-screen conversion
+        """
         color = self.get_color()
 
+        # Convert world coordinates to screen coordinates
+        screen_x, screen_y = transform.world_to_screen(self.x, self.y)
+        screen_radius = transform.scale_distance(self.radius)
+
         # Draw filled circle
-        arcade.draw_circle_filled(self.x, self.y, self.radius, color)
+        arcade.draw_circle_filled(screen_x, screen_y, screen_radius, color)
 
         # Draw black outline
-        arcade.draw_circle_outline(self.x, self.y, self.radius, arcade.color.BLACK, 2)
+        arcade.draw_circle_outline(screen_x, screen_y, screen_radius, arcade.color.BLACK, 2)

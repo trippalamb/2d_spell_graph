@@ -1,7 +1,8 @@
 {
   "window": {
     "width": 1600,
-    "height": 900
+    "height": 900,
+    "world_scale": 1.0
   },
   "nodes": [
     {"x": 200, "y": 200, "type": "basic"},

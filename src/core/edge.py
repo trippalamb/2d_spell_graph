@@ -2,7 +2,10 @@
 import math
 import re
 import arcade
-from typing import List, Tuple
+from typing import List, Tuple, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from src.simulation.transform import CoordinateTransform
 
 
 class Edge:
@@ -190,15 +193,17 @@ class Edge:
 
         return (self.points[0], 0.0)
 
-    def _draw_arrow(self, position: Tuple[float, float], angle: float, color: tuple, arrow_size: float = 12):
+    def _draw_arrow(self, position: Tuple[float, float], angle: float, color: tuple,
+                    transform: 'CoordinateTransform', arrow_size: float = 12):
         """
         Draw a directional arrow at a specific position.
 
         Args:
-            position: (x, y) position of the arrow
+            position: (x, y) position of the arrow in world coordinates
             angle: Angle in radians for arrow direction
             color: RGB tuple for arrow color
-            arrow_size: Size of the arrow in pixels
+            transform: Coordinate transform for world-to-screen conversion
+            arrow_size: Size of the arrow in world units
         """
         x, y = position
 
@@ -215,26 +220,40 @@ class Edge:
         back_x2 = tip_x + arrow_size * math.cos(back_angle2)
         back_y2 = tip_y + arrow_size * math.sin(back_angle2)
 
+        # Convert to screen coordinates
+        screen_tip = transform.world_to_screen(tip_x, tip_y)
+        screen_back1 = transform.world_to_screen(back_x1, back_y1)
+        screen_back2 = transform.world_to_screen(back_x2, back_y2)
+
         # Draw filled triangle
         arcade.draw_triangle_filled(
-            tip_x, tip_y,
-            back_x1, back_y1,
-            back_x2, back_y2,
+            screen_tip[0], screen_tip[1],
+            screen_back1[0], screen_back1[1],
+            screen_back2[0], screen_back2[1],
             color
         )
 
-    def draw(self):
-        """Draw the edge on screen with directional arrow."""
+    def draw(self, transform: 'CoordinateTransform'):
+        """
+        Draw the edge on screen with directional arrow.
+
+        Args:
+            transform: Coordinate transform for world-to-screen conversion
+        """
         if len(self.points) < 2:
             return
 
         color = self.get_color()
 
-        # Draw line segments
+        # Draw line segments (converting world to screen coordinates)
         for i in range(len(self.points) - 1):
-            p1 = self.points[i]
-            p2 = self.points[i + 1]
-            arcade.draw_line(p1[0], p1[1], p2[0], p2[1], color, 3)
+            p1_world = self.points[i]
+            p2_world = self.points[i + 1]
+
+            p1_screen = transform.world_to_screen(p1_world[0], p1_world[1])
+            p2_screen = transform.world_to_screen(p2_world[0], p2_world[1])
+
+            arcade.draw_line(p1_screen[0], p1_screen[1], p2_screen[0], p2_screen[1], color, 3)
 
         # Draw directional arrow at the midpoint
         total_length = self._get_total_length()
@@ -244,9 +263,9 @@ class Edge:
             arrow_pos, arrow_angle = self._get_point_at_distance(arrow_distance)
 
             # Small offset perpendicular to the path for visibility
-            offset_distance = 12  # pixels offset from the path
+            offset_distance = 12  # world units offset from the path
             offset_angle = arrow_angle + math.pi / 2  # perpendicular to path
             offset_x = arrow_pos[0] + offset_distance * math.cos(offset_angle)
             offset_y = arrow_pos[1] + offset_distance * math.sin(offset_angle)
 
-            self._draw_arrow((offset_x, offset_y), arrow_angle, color, arrow_size=10)
+            self._draw_arrow((offset_x, offset_y), arrow_angle, color, transform, arrow_size=10)
