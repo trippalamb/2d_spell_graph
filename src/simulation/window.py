@@ -1,11 +1,13 @@
 """Main simulation window for the spell graph."""
 import arcade
+import arcade.gui
 from typing import List
 import json
 import os
 
 from src.core import Node, NodeType, Edge
 from src.physics import update_node_forces
+from src.simulation.cursor import CursorManager
 
 
 class GraphSimulation(arcade.Window):
@@ -32,6 +34,61 @@ class GraphSimulation(arcade.Window):
         self.nodes: List[Node] = []
         self.edges: List[Edge] = []
 
+        # Cursor system
+        self.cursor_manager = CursorManager()
+
+        # UI Manager
+        self.ui_manager = arcade.gui.UIManager()
+        self.ui_manager.enable()
+
+        # Create UI buttons
+        self._setup_ui()
+
+    def _setup_ui(self):
+        """Set up UI buttons for cursor control."""
+        # Create a vertical box for buttons
+        v_box = arcade.gui.UIBoxLayout(vertical=True, space_between=10)
+
+        # Play/Pause button
+        self.play_pause_button = arcade.gui.UIFlatButton(
+            text="Play",
+            width=120
+        )
+        self.play_pause_button.on_click = self._on_play_pause
+        v_box.add(self.play_pause_button)
+
+        # Restart button
+        restart_button = arcade.gui.UIFlatButton(
+            text="Restart",
+            width=120
+        )
+        restart_button.on_click = self._on_restart
+        v_box.add(restart_button)
+
+        # Create an anchor widget to position the buttons
+        anchor = arcade.gui.UIAnchorWidget(
+            anchor_x="left",
+            anchor_y="top",
+            align_x=20,
+            align_y=-20,
+            child=v_box
+        )
+
+        self.ui_manager.add(anchor)
+
+    def _on_play_pause(self, event):
+        """Handle play/pause button click."""
+        self.cursor_manager.toggle_play_pause()
+        if self.cursor_manager.is_playing:
+            self.play_pause_button.text = "Pause"
+        else:
+            self.play_pause_button.text = "Play"
+
+    def _on_restart(self, event):
+        """Handle restart button click."""
+        self.cursor_manager.restart(self.nodes)
+        self.play_pause_button.text = "Pause"
+
     def setup(self, config_path: str = "configs/default.json"):
         """
         Set up the simulation from a configuration file.
@@ -40,6 +97,10 @@ class GraphSimulation(arcade.Window):
             config_path: Path to configuration JSON file
         """
         self.load_config(config_path)
+
+        # Build edge graph and initialize cursor
+        self.cursor_manager.build_edge_graph(self.nodes, self.edges)
+        self.cursor_manager.restart(self.nodes)
 
     def load_config(self, config_path: str):
         """
@@ -98,6 +159,9 @@ class GraphSimulation(arcade.Window):
         # Update forces and instability for all nodes
         update_node_forces(self.nodes)
 
+        # Update cursor traversal
+        self.cursor_manager.update(delta_time, self.nodes, self.edges)
+
     def on_draw(self):
         """Render the graph."""
         # Clear the screen
@@ -110,3 +174,9 @@ class GraphSimulation(arcade.Window):
         # Draw nodes
         for node in self.nodes:
             node.draw()
+
+        # Draw cursors
+        self.cursor_manager.draw()
+
+        # Draw UI
+        self.ui_manager.draw()
