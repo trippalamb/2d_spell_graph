@@ -81,40 +81,60 @@ class Edge(SpellGraphEntity):
         self.angular_strains: List[float] = []  # Current angular strain at each physics node
         self.flexural_strength: float = 1.5  # Max angular strain (radians) before breaking
 
+        # Original shape preservation - stores perpendicular offsets from straight line
+        self.original_offsets: List[Tuple[float, float]] = []  # (t, perpendicular_offset) for each node
+        self.original_start: Tuple[float, float] = (0.0, 0.0)
+        self.original_end: Tuple[float, float] = (0.0, 0.0)
+
     def init_physics(self):
         """Initialize physics nodes along the edge path for simulation."""
         points = self.get_points()
         if len(points) < 2:
             return
 
-        # Calculate rest length
-        self.rest_length = self._get_total_length()
+        # Store original endpoint positions
+        self.original_start = (self.start_node.x, self.start_node.y)
+        self.original_end = (self.end_node.x, self.end_node.y)
 
-        # Create internal physics nodes evenly distributed along the edge
-        # These are separate from bezier visualization - they're for physics simulation
+        # Calculate rest length using bezier path (before physics_nodes exist)
+        total_length = 0.0
+        for i in range(len(points) - 1):
+            dx = points[i + 1][0] - points[i][0]
+            dy = points[i + 1][1] - points[i][1]
+            total_length += math.sqrt(dx * dx + dy * dy)
+        self.rest_length = total_length
+
+        # Create internal physics nodes evenly distributed along the bezier curve
         self.physics_nodes = []
         self.segment_tensions = []
         self.original_angles = []
         self.angular_strains = []
+        self.original_offsets = []
 
-        total_length = self.rest_length
         if total_length <= 0:
             return
 
-        # Place physics nodes at regular intervals (excluding endpoints which are spell nodes)
+        # Place physics nodes at regular intervals along the bezier curve
         for i in range(1, self.num_physics_segments):
             t = i / self.num_physics_segments
             target_dist = t * total_length
-            point, _ = self._get_point_at_distance(target_dist)
+
+            # Find point on bezier at this distance
+            point, _ = self._get_point_at_distance_on_bezier(target_dist, points)
             self.physics_nodes.append(point)
+
+            # Calculate perpendicular offset from straight line
+            offset = self._calculate_perpendicular_offset(
+                point, self.original_start, self.original_end, t
+            )
+            self.original_offsets.append((t, offset))
 
         # Initialize tensions to 0
         self.segment_tensions = [0.0] * (len(self.physics_nodes) + 1)
 
         # Calculate and store original angles at each physics node
-        # Angle is measured as the angle formed by the two adjacent segments
-        start_pos = (self.start_node.x, self.start_node.y)
-        end_pos = (self.end_node.x, self.end_node.y)
+        start_pos = self.original_start
+        end_pos = self.original_end
         all_points = [start_pos] + self.physics_nodes + [end_pos]
 
         for i in range(1, len(all_points) - 1):  # For each physics node
@@ -124,6 +144,81 @@ class Edge(SpellGraphEntity):
         # Initialize angular strains to 0
         self.angular_strains = [0.0] * len(self.original_angles)
         self.is_broken = False
+
+    def _get_point_at_distance_on_bezier(self, target_distance: float,
+                                          points: List[Tuple[float, float]]) -> Tuple[Tuple[float, float], float]:
+        """Get point at distance along a specific set of points (used during init)."""
+        current_distance = 0.0
+
+        for i in range(len(points) - 1):
+            p1 = points[i]
+            p2 = points[i + 1]
+
+            dx = p2[0] - p1[0]
+            dy = p2[1] - p1[1]
+            segment_length = math.sqrt(dx * dx + dy * dy)
+
+            if current_distance + segment_length >= target_distance:
+                remaining = target_distance - current_distance
+                t = remaining / segment_length if segment_length > 0 else 0
+
+                x = p1[0] + t * dx
+                y = p1[1] + t * dy
+                angle = math.atan2(dy, dx)
+
+                return ((x, y), angle)
+
+            current_distance += segment_length
+
+        # Return last point if we get here
+        if len(points) >= 2:
+            p1 = points[-2]
+            p2 = points[-1]
+            angle = math.atan2(p2[1] - p1[1], p2[0] - p1[0])
+            return (p2, angle)
+
+        return (points[0], 0.0)
+
+    def _calculate_perpendicular_offset(self, point: Tuple[float, float],
+                                         start: Tuple[float, float],
+                                         end: Tuple[float, float],
+                                         t: float) -> float:
+        """
+        Calculate perpendicular offset of a point from the straight line between start and end.
+
+        Args:
+            point: The point to measure
+            start: Line start point
+            end: Line end point
+            t: Parameter along the line (0-1)
+
+        Returns:
+            Signed perpendicular distance (positive = left of line, negative = right)
+        """
+        # Point on the straight line at parameter t
+        line_x = start[0] + t * (end[0] - start[0])
+        line_y = start[1] + t * (end[1] - start[1])
+
+        # Vector from line point to actual point
+        dx = point[0] - line_x
+        dy = point[1] - line_y
+
+        # Line direction vector
+        line_dx = end[0] - start[0]
+        line_dy = end[1] - start[1]
+        line_length = math.sqrt(line_dx * line_dx + line_dy * line_dy)
+
+        if line_length < 0.001:
+            return 0.0
+
+        # Perpendicular (normal) vector (rotate 90 degrees)
+        perp_x = -line_dy / line_length
+        perp_y = line_dx / line_length
+
+        # Project offset onto perpendicular direction
+        offset = dx * perp_x + dy * perp_y
+
+        return offset
 
     def _calculate_angle_at_point(self, points: List[Tuple[float, float]], index: int) -> float:
         """
@@ -169,7 +264,8 @@ class Edge(SpellGraphEntity):
         Update physics nodes based on endpoint positions.
         Calculate tensile and flexural strain at each segment/node.
 
-        Forces are distributed across the entire material edge, not just endpoints.
+        Physics nodes preserve original curve shape by maintaining perpendicular
+        offsets from the straight line between endpoints.
 
         Args:
             dt: Delta time in seconds
@@ -181,57 +277,49 @@ class Edge(SpellGraphEntity):
         start_pos = (self.start_node.x, self.start_node.y)
         end_pos = (self.end_node.x, self.end_node.y)
 
-        segment_rest_length = self.rest_length / (len(self.physics_nodes) + 1)
+        # Calculate current line direction and perpendicular
+        line_dx = end_pos[0] - start_pos[0]
+        line_dy = end_pos[1] - start_pos[1]
+        line_length = math.sqrt(line_dx * line_dx + line_dy * line_dy)
 
-        # Two-pass update for physics nodes:
-        # Pass 1: Pull from start toward end (propagate start node's influence)
-        # Pass 2: Pull from end toward start (propagate end node's influence)
-        # Average the results for balanced force distribution
+        if line_length < 0.001:
+            line_length = 0.001
 
-        # Pass 1: Forward propagation from start
-        forward_nodes = []
-        prev_point = start_pos
-        for i in range(len(self.physics_nodes)):
-            current = self.physics_nodes[i]
-            dx = current[0] - prev_point[0]
-            dy = current[1] - prev_point[1]
-            dist = math.sqrt(dx * dx + dy * dy)
+        # Normalized line direction
+        dir_x = line_dx / line_length
+        dir_y = line_dy / line_length
 
-            if dist > 0.001:
-                new_x = prev_point[0] + (dx / dist) * segment_rest_length
-                new_y = prev_point[1] + (dy / dist) * segment_rest_length
-            else:
-                new_x = current[0]
-                new_y = current[1]
+        # Perpendicular direction (90 degrees counterclockwise)
+        perp_x = -dir_y
+        perp_y = dir_x
 
-            forward_nodes.append((new_x, new_y))
-            prev_point = (new_x, new_y)
+        # Calculate target positions that preserve original curve shape
+        # Each node maintains its original perpendicular offset
+        shape_target_nodes = []
+        for i, (t, offset) in enumerate(self.original_offsets):
+            # Point on straight line at parameter t
+            base_x = start_pos[0] + t * line_dx
+            base_y = start_pos[1] + t * line_dy
 
-        # Pass 2: Backward propagation from end
-        backward_nodes = [None] * len(self.physics_nodes)
-        prev_point = end_pos
-        for i in range(len(self.physics_nodes) - 1, -1, -1):
-            current = self.physics_nodes[i]
-            dx = current[0] - prev_point[0]
-            dy = current[1] - prev_point[1]
-            dist = math.sqrt(dx * dx + dy * dy)
+            # Add perpendicular offset to preserve original curve shape
+            target_x = base_x + offset * perp_x
+            target_y = base_y + offset * perp_y
 
-            if dist > 0.001:
-                new_x = prev_point[0] + (dx / dist) * segment_rest_length
-                new_y = prev_point[1] + (dy / dist) * segment_rest_length
-            else:
-                new_x = current[0]
-                new_y = current[1]
+            shape_target_nodes.append((target_x, target_y))
 
-            backward_nodes[i] = (new_x, new_y)
-            prev_point = (new_x, new_y)
-
-        # Average forward and backward passes for balanced distribution
+        # Move physics nodes toward shape-preserving targets
+        # This resists both stretching AND unbending
         new_physics_nodes = []
         for i in range(len(self.physics_nodes)):
-            avg_x = (forward_nodes[i][0] + backward_nodes[i][0]) / 2
-            avg_y = (forward_nodes[i][1] + backward_nodes[i][1]) / 2
-            new_physics_nodes.append((avg_x, avg_y))
+            current = self.physics_nodes[i]
+            target = shape_target_nodes[i] if i < len(shape_target_nodes) else current
+
+            # Blend current position toward target (high stiffness = preserve shape)
+            stiffness = 0.5  # How strongly to preserve original shape (0-1)
+            new_x = current[0] + (target[0] - current[0]) * stiffness
+            new_y = current[1] + (target[1] - current[1]) * stiffness
+
+            new_physics_nodes.append((new_x, new_y))
 
         self.physics_nodes = new_physics_nodes
 
