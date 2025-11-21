@@ -326,6 +326,9 @@ class Edge(SpellGraphEntity):
         # Build all points list
         all_points = [start_pos] + self.physics_nodes + [end_pos]
 
+        # Calculate segment rest length for tension calculation
+        segment_rest_length = self.rest_length / (len(self.physics_nodes) + 1)
+
         # Calculate tension (tensile strain) at each segment
         self.segment_tensions = []
         for i in range(len(all_points) - 1):
