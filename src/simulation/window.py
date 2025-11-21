@@ -284,6 +284,7 @@ class GraphSimulation(arcade.Window):
         script = '''
 import tkinter as tk
 from tkinter import filedialog
+import sys
 root = tk.Tk()
 root.withdraw()
 root.attributes('-topmost', True)
@@ -293,16 +294,23 @@ filename = filedialog.asksaveasfilename(
     filetypes=[("JSON files", "*.json"), ("All files", "*.*")],
     initialdir="configs"
 )
-print(filename if filename else "")
+print(filename if filename else "", flush=True)
 root.quit()
 root.destroy()
+sys.exit(0)
 '''
         try:
+            # Use creationflags on Windows to prevent console window
+            kwargs = {}
+            if sys.platform == 'win32':
+                kwargs['creationflags'] = subprocess.CREATE_NO_WINDOW
+
             result = subprocess.run(
                 [sys.executable, '-c', script],
                 capture_output=True,
                 text=True,
-                timeout=60
+                timeout=60,
+                **kwargs
             )
             filename = result.stdout.strip()
             return filename if filename else None
@@ -318,6 +326,7 @@ root.destroy()
         script = '''
 import tkinter as tk
 from tkinter import filedialog
+import sys
 root = tk.Tk()
 root.withdraw()
 root.attributes('-topmost', True)
@@ -326,16 +335,23 @@ filename = filedialog.askopenfilename(
     filetypes=[("JSON files", "*.json"), ("All files", "*.*")],
     initialdir="configs"
 )
-print(filename if filename else "")
+print(filename if filename else "", flush=True)
 root.quit()
 root.destroy()
+sys.exit(0)
 '''
         try:
+            # Use creationflags on Windows to prevent console window
+            kwargs = {}
+            if sys.platform == 'win32':
+                kwargs['creationflags'] = subprocess.CREATE_NO_WINDOW
+
             result = subprocess.run(
                 [sys.executable, '-c', script],
                 capture_output=True,
                 text=True,
-                timeout=60
+                timeout=60,
+                **kwargs
             )
             filename = result.stdout.strip()
             return filename if filename else None
@@ -399,17 +415,21 @@ root.destroy()
 
         if filename:
             try:
-                # Deselect any edge before loading (old edge will be invalid)
+                # Clear ALL state that references old objects before loading
                 self._deselect_edge()
                 self.dragged_node = None
                 self.dragged_handle = None
+                self.hovered_entity = None
+                self.info_window.clear()
 
                 self.load_config(filename)
                 self.cursor_manager.build_edge_graph(self.nodes, self.edges)
                 self.cursor_manager.restart(self.nodes)
                 print(f"Spell loaded from {filename}")
             except Exception as e:
+                import traceback
                 print(f"Error loading spell: {e}")
+                traceback.print_exc()
 
     def setup(self, config_path: str = "configs/default.json"):
         """
