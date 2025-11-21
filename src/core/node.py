@@ -14,6 +14,7 @@ if TYPE_CHECKING:
 class NodeType(Enum):
     """Types of nodes in the graph."""
     BASIC = "basic"
+    START = "start"  # Cursor origin node
 
 
 # Inherent charge values for each node type
@@ -21,6 +22,7 @@ class NodeType(Enum):
 # Nodes with the same charge type repel each other
 NODE_TYPE_CHARGES = {
     NodeType.BASIC: {"alpha": 10.0},  # Base charge value for basic nodes
+    NodeType.START: {"alpha": 10.0},  # Start nodes have same charge as basic
 }
 
 
@@ -143,3 +145,9 @@ class Node(SpellGraphEntity):
 
         # Draw black outline
         arcade.draw_circle_outline(screen_x, screen_y, screen_radius, arcade.color.BLACK, 2)
+
+        # Draw special indicator for START nodes (white star/inner circle)
+        if self.node_type == NodeType.START:
+            inner_radius = screen_radius * 0.4
+            arcade.draw_circle_filled(screen_x, screen_y, inner_radius, arcade.color.WHITE)
+            arcade.draw_circle_outline(screen_x, screen_y, inner_radius, arcade.color.BLACK, 1)

@@ -169,6 +169,8 @@ class Edge(SpellGraphEntity):
         Update physics nodes based on endpoint positions.
         Calculate tensile and flexural strain at each segment/node.
 
+        Forces are distributed across the entire material edge, not just endpoints.
+
         Args:
             dt: Delta time in seconds
         """
@@ -179,42 +181,57 @@ class Edge(SpellGraphEntity):
         start_pos = (self.start_node.x, self.start_node.y)
         end_pos = (self.end_node.x, self.end_node.y)
 
-        # Physics nodes resist bending - they maintain rigid connections
-        # Calculate where nodes SHOULD be based on rigid rod behavior
-        # Each segment maintains its original length ratio
         segment_rest_length = self.rest_length / (len(self.physics_nodes) + 1)
 
-        # Update physics nodes to maintain rigid segments from start
-        # Each node is placed at segment_rest_length from the previous point
-        # in the direction toward where it needs to go
-        new_physics_nodes = []
+        # Two-pass update for physics nodes:
+        # Pass 1: Pull from start toward end (propagate start node's influence)
+        # Pass 2: Pull from end toward start (propagate end node's influence)
+        # Average the results for balanced force distribution
+
+        # Pass 1: Forward propagation from start
+        forward_nodes = []
         prev_point = start_pos
-
         for i in range(len(self.physics_nodes)):
-            # Direction from prev to next target (weighted average toward end)
-            if i < len(self.physics_nodes) - 1:
-                next_target = self.physics_nodes[i + 1]
-            else:
-                next_target = end_pos
-
-            # Current node position
             current = self.physics_nodes[i]
-
-            # Calculate direction from previous point toward current/next
             dx = current[0] - prev_point[0]
             dy = current[1] - prev_point[1]
             dist = math.sqrt(dx * dx + dy * dy)
 
             if dist > 0.001:
-                # Place node at rest length from previous
                 new_x = prev_point[0] + (dx / dist) * segment_rest_length
                 new_y = prev_point[1] + (dy / dist) * segment_rest_length
             else:
                 new_x = current[0]
                 new_y = current[1]
 
-            new_physics_nodes.append((new_x, new_y))
+            forward_nodes.append((new_x, new_y))
             prev_point = (new_x, new_y)
+
+        # Pass 2: Backward propagation from end
+        backward_nodes = [None] * len(self.physics_nodes)
+        prev_point = end_pos
+        for i in range(len(self.physics_nodes) - 1, -1, -1):
+            current = self.physics_nodes[i]
+            dx = current[0] - prev_point[0]
+            dy = current[1] - prev_point[1]
+            dist = math.sqrt(dx * dx + dy * dy)
+
+            if dist > 0.001:
+                new_x = prev_point[0] + (dx / dist) * segment_rest_length
+                new_y = prev_point[1] + (dy / dist) * segment_rest_length
+            else:
+                new_x = current[0]
+                new_y = current[1]
+
+            backward_nodes[i] = (new_x, new_y)
+            prev_point = (new_x, new_y)
+
+        # Average forward and backward passes for balanced distribution
+        new_physics_nodes = []
+        for i in range(len(self.physics_nodes)):
+            avg_x = (forward_nodes[i][0] + backward_nodes[i][0]) / 2
+            avg_y = (forward_nodes[i][1] + backward_nodes[i][1]) / 2
+            new_physics_nodes.append((avg_x, avg_y))
 
         self.physics_nodes = new_physics_nodes
 
@@ -693,6 +710,22 @@ class Edge(SpellGraphEntity):
         # Return distance to closest point
         return math.sqrt((px - closest_x) ** 2 + (py - closest_y) ** 2)
 
+    def get_current_path(self) -> List[Tuple[float, float]]:
+        """
+        Get the current path points - physics path if simulating, otherwise bezier.
+
+        Returns:
+            List of (x, y) tuples representing the current path
+        """
+        if len(self.physics_nodes) > 0 and not self.is_broken:
+            # Use physics simulation path
+            start_pos = (self.start_node.x, self.start_node.y)
+            end_pos = (self.end_node.x, self.end_node.y)
+            return [start_pos] + self.physics_nodes + [end_pos]
+        else:
+            # Use bezier curve path
+            return self.get_points()
+
     def _get_total_length(self) -> float:
         """
         Calculate the total length of the edge path.
@@ -700,7 +733,7 @@ class Edge(SpellGraphEntity):
         Returns:
             Total path length in pixels
         """
-        points = self.get_points()
+        points = self.get_current_path()
         total_length = 0.0
         for i in range(len(points) - 1):
             p1 = points[i]
@@ -720,7 +753,7 @@ class Edge(SpellGraphEntity):
         Returns:
             Tuple of (point, angle) where angle is the direction of the path at that point
         """
-        points = self.get_points()
+        points = self.get_current_path()
         current_distance = 0.0
 
         for i in range(len(points) - 1):

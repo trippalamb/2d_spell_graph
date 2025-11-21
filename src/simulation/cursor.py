@@ -197,19 +197,31 @@ class CursorManager:
 
     def restart(self, nodes: List[Node], edges: List[Edge] = None):
         """
-        Restart cursor traversal from the first node.
+        Restart cursor traversal from START nodes (or node 0 if no START nodes exist).
 
         Args:
             nodes: List of all nodes
             edges: List of all edges (optional, rebuilds edge graph if provided)
         """
+        from src.core.node import NodeType
+
         self.cursors = []
         # Rebuild edge graph if edges provided (accounts for node movement)
         if edges is not None:
             self.build_edge_graph(nodes, edges)
+
         if len(nodes) > 0:
-            # Spawn initial cursors from node 0
-            self.spawn_cursors_at_node(0)
+            # Find all START nodes
+            start_indices = [i for i, node in enumerate(nodes) if node.node_type == NodeType.START]
+
+            if start_indices:
+                # Spawn cursors from all START nodes
+                for start_idx in start_indices:
+                    self.spawn_cursors_at_node(start_idx)
+            else:
+                # Fallback to node 0 if no START nodes
+                self.spawn_cursors_at_node(0)
+
         self.is_playing = True
 
     def toggle_play_pause(self):

@@ -12,7 +12,7 @@ CHARGE_CONSTANT = 500000.0
 
 # Repulsion constant for simulation mode (like charges repel)
 # Higher values = stronger repulsion between nodes
-REPULSION_CONSTANT = 500.0
+REPULSION_CONSTANT = 200.0
 
 # Edge spring constant - how strongly edges pull nodes together
 # Lower values = weaker spring resistance
