@@ -16,6 +16,12 @@ class NodeType(Enum):
     BASIC = "basic"
 
 
+# Inherent force values for each node type
+NODE_TYPE_FORCES = {
+    NodeType.BASIC: 10.0,  # Base force value for basic nodes
+}
+
+
 class Node(SpellGraphEntity):
     """
     Represents a node in the spatial physics graph.
@@ -46,7 +52,8 @@ class Node(SpellGraphEntity):
         self.x = x
         self.y = y
         self.node_type = node_type
-        self.force = 0.0
+        # Inherent force based on node type (used for repulsion in simulation)
+        self.force = NODE_TYPE_FORCES.get(node_type, 10.0)
         self.instability = 0.0
         self.radius = 15  # Visual radius in world units
         self.edges: List[Tuple['Edge', 'EdgeDirection']] = []  # List of (edge, direction) tuples

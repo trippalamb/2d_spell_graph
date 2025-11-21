@@ -8,7 +8,8 @@ import re
 import time
 
 from src.core import Node, NodeType, Edge, EdgeDirection, SpellGraphEntity
-from src.physics import update_node_forces
+from src.physics import update_node_forces, apply_repulsion_forces
+import copy
 from src.simulation.cursor import CursorManager
 from src.simulation.transform import CoordinateTransform
 from src.simulation.info_window import InfoWindow
@@ -114,6 +115,10 @@ class GraphSimulation(arcade.Window):
         # Time scale for simulation speed (0.1x to 10x)
         self.time_scale = 1.0
 
+        # Physics simulation state
+        self.is_simulating = False
+        self.saved_state = None  # Saved state before simulation started
+
         # UI Manager
         self.ui_manager = arcade.gui.UIManager()
         self.ui_manager.enable()
@@ -207,6 +212,14 @@ class GraphSimulation(arcade.Window):
         self.time_scale_slider.on_change = self._on_time_scale_change
         v_box.add(self.time_scale_slider)
 
+        # Simulate button
+        self.simulate_button = arcade.gui.UIFlatButton(
+            text="Simulate",
+            width=120
+        )
+        self.simulate_button.on_click = self._on_simulate_toggle
+        v_box.add(self.simulate_button)
+
         # Create an anchor layout to position the buttons
         anchor = arcade.gui.UIAnchorLayout()
         anchor.add(
@@ -262,6 +275,47 @@ class GraphSimulation(arcade.Window):
     def _on_load(self, event):
         """Handle load button click."""
         self.load_spell()
+
+    def _on_simulate_toggle(self, event):
+        """Handle simulate button click - toggle simulation mode."""
+        if self.is_simulating:
+            self._stop_simulation()
+        else:
+            self._start_simulation()
+
+    def _start_simulation(self):
+        """Start physics simulation, saving current state."""
+        # Save current state
+        self.saved_state = {
+            'node_positions': [(node.x, node.y) for node in self.nodes],
+            'bezier_handles': [
+                (edge.bezier_handle1, edge.bezier_handle2)
+                for edge in self.edges
+            ]
+        }
+
+        self.is_simulating = True
+        self.simulate_button.text = "Stop Sim"
+        print("Simulation started - nodes will now repel each other")
+
+    def _stop_simulation(self):
+        """Stop simulation and restore saved state."""
+        if self.saved_state:
+            # Restore node positions
+            for i, node in enumerate(self.nodes):
+                if i < len(self.saved_state['node_positions']):
+                    node.x, node.y = self.saved_state['node_positions'][i]
+
+            # Restore bezier handles
+            for i, edge in enumerate(self.edges):
+                if i < len(self.saved_state['bezier_handles']):
+                    edge.bezier_handle1, edge.bezier_handle2 = self.saved_state['bezier_handles'][i]
+
+            self.saved_state = None
+
+        self.is_simulating = False
+        self.simulate_button.text = "Simulate"
+        print("Simulation stopped - state restored")
 
     def repath_all_edges(self, num_segments: int = 10):
         """
@@ -532,6 +586,15 @@ sys.exit(0)
 
         # Update forces and instability for all nodes
         update_node_forces(self.nodes)
+
+        # Apply physics simulation if running
+        if self.is_simulating:
+            # Calculate repulsion forces and apply to node positions
+            velocities = apply_repulsion_forces(self.nodes, scaled_delta)
+            for i, node in enumerate(self.nodes):
+                dx, dy = velocities[i]
+                node.x += dx
+                node.y += dy
 
         # Update cursor traversal with scaled time
         self.cursor_manager.update(scaled_delta, self.nodes, self.edges)
