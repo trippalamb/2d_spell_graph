@@ -279,6 +279,7 @@ class GraphSimulation(arcade.Window):
     def save_spell(self):
         """Save current spell configuration to a file."""
         root = None
+        filename = None
         try:
             # Use tkinter for file dialog
             import tkinter as tk
@@ -300,13 +301,24 @@ class GraphSimulation(arcade.Window):
                 initialdir="configs"
             )
 
-            # Proper cleanup of tkinter
-            root.update()
-            root.quit()
-            root.destroy()
-            root = None
+        except Exception as e:
+            print(f"Error with file dialog: {e}")
+        finally:
+            # Ensure tkinter cleanup happens no matter what
+            if root is not None:
+                try:
+                    root.update()
+                    root.quit()
+                    root.destroy()
+                except:
+                    pass
+                # Force garbage collection to help clean up tkinter
+                import gc
+                gc.collect()
 
-            if filename:
+        # Now do the actual saving AFTER tkinter is fully destroyed
+        if filename:
+            try:
                 # Build configuration dictionary
                 config = {
                     "window": {
@@ -348,19 +360,13 @@ class GraphSimulation(arcade.Window):
 
                 print(f"Spell saved to {filename}")
 
-        except Exception as e:
-            print(f"Error saving spell: {e}")
-            # Ensure cleanup even on error
-            if root is not None:
-                try:
-                    root.quit()
-                    root.destroy()
-                except:
-                    pass
+            except Exception as e:
+                print(f"Error saving spell: {e}")
 
     def load_spell(self):
         """Load a spell configuration from a file."""
         root = None
+        filename = None
         try:
             # Use tkinter for file dialog
             import tkinter as tk
@@ -381,29 +387,30 @@ class GraphSimulation(arcade.Window):
                 initialdir="configs"
             )
 
-            # Proper cleanup of tkinter
-            root.update()
-            root.quit()
-            root.destroy()
-            root = None
-
-            if filename:
-                # Load configuration
-                self.load_config(filename)
-                # Rebuild edge graph and restart cursors
-                self.cursor_manager.build_edge_graph(self.nodes, self.edges)
-                self.cursor_manager.restart(self.nodes)
-                print(f"Spell loaded from {filename}")
-
         except Exception as e:
-            print(f"Error loading spell: {e}")
-            # Ensure cleanup even on error
+            print(f"Error with file dialog: {e}")
+        finally:
+            # Ensure tkinter cleanup happens no matter what
             if root is not None:
                 try:
+                    root.update()
                     root.quit()
                     root.destroy()
                 except:
                     pass
+                # Force garbage collection to help clean up tkinter
+                import gc
+                gc.collect()
+
+        # Now do the actual loading AFTER tkinter is fully destroyed
+        if filename:
+            try:
+                self.load_config(filename)
+                self.cursor_manager.build_edge_graph(self.nodes, self.edges)
+                self.cursor_manager.restart(self.nodes)
+                print(f"Spell loaded from {filename}")
+            except Exception as e:
+                print(f"Error loading spell: {e}")
 
     def setup(self, config_path: str = "configs/default.json"):
         """
