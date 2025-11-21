@@ -1,11 +1,13 @@
 """Info window for displaying entity information on hover."""
 import arcade
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 
 
 class InfoWindow:
     """
     Displays information about entities in a hover popup window.
+
+    Uses arcade.Text objects for better performance instead of draw_text.
 
     Attributes:
         position: (x, y) position of the window in screen coordinates
@@ -27,6 +29,11 @@ class InfoWindow:
         self.background_color = (245, 245, 245, 230)  # Light gray with transparency
         self.text_color = arcade.color.BLACK
         self.border_color = arcade.color.BLACK
+
+        # Cached Text objects for performance
+        self._text_objects: List[arcade.Text] = []
+        self._cached_info: Optional[Dict[str, Any]] = None
+        self._cached_position: Optional[tuple] = None
 
     def set_info(self, info: Dict[str, Any], mouse_x: float, mouse_y: float):
         """
@@ -50,10 +57,43 @@ class InfoWindow:
         """Check if the window should be visible."""
         return self.info is not None and self.position is not None
 
+    def _update_text_objects(self):
+        """Update cached Text objects if info or position changed."""
+        if self.info == self._cached_info and self.position == self._cached_position:
+            return
+
+        self._cached_info = dict(self.info) if self.info else None
+        self._cached_position = self.position
+
+        # Clear old text objects
+        self._text_objects.clear()
+
+        if not self.info or not self.position:
+            return
+
+        x, y = self.position
+        current_y = y - self.padding - self.font_size
+
+        for key, value in self.info.items():
+            text = f"{key}: {value}"
+            text_obj = arcade.Text(
+                text,
+                x + self.padding,
+                current_y,
+                self.text_color,
+                self.font_size,
+                font_name="Arial"
+            )
+            self._text_objects.append(text_obj)
+            current_y -= self.line_height
+
     def draw(self):
         """Draw the info window if visible."""
         if not self.is_visible():
             return
+
+        # Update text objects if needed
+        self._update_text_objects()
 
         # Calculate window dimensions
         max_key_length = max(len(str(key)) for key in self.info.keys())
@@ -85,16 +125,6 @@ class InfoWindow:
             2
         )
 
-        # Draw text lines
-        current_y = y - self.padding - self.font_size
-        for key, value in self.info.items():
-            text = f"{key}: {value}"
-            arcade.draw_text(
-                text,
-                x + self.padding,
-                current_y,
-                self.text_color,
-                self.font_size,
-                font_name="Arial"
-            )
-            current_y -= self.line_height
+        # Draw cached text objects
+        for text_obj in self._text_objects:
+            text_obj.draw()

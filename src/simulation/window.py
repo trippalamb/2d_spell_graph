@@ -399,6 +399,11 @@ root.destroy()
 
         if filename:
             try:
+                # Deselect any edge before loading (old edge will be invalid)
+                self._deselect_edge()
+                self.dragged_node = None
+                self.dragged_handle = None
+
                 self.load_config(filename)
                 self.cursor_manager.build_edge_graph(self.nodes, self.edges)
                 self.cursor_manager.restart(self.nodes)
