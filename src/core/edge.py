@@ -68,6 +68,125 @@ class Edge(SpellGraphEntity):
         # Legacy control_points support (ignored, using bezier instead)
         self.control_points = []
 
+        # Physics simulation properties
+        self.physics_nodes: List[Tuple[float, float]] = []  # Internal nodes along the edge
+        self.segment_tensions: List[float] = []  # Tension at each segment
+        self.tensile_strength: float = 50.0  # Max tension before breaking
+        self.is_broken: bool = False  # Whether the edge has snapped
+        self.rest_length: float = 0.0  # Original length for strain calculation
+        self.num_physics_segments: int = 5  # Number of internal segments for physics
+
+    def init_physics(self):
+        """Initialize physics nodes along the edge path for simulation."""
+        points = self.get_points()
+        if len(points) < 2:
+            return
+
+        # Calculate rest length
+        self.rest_length = self._get_total_length()
+
+        # Create internal physics nodes evenly distributed along the edge
+        # These are separate from bezier visualization - they're for physics simulation
+        self.physics_nodes = []
+        self.segment_tensions = []
+
+        total_length = self.rest_length
+        if total_length <= 0:
+            return
+
+        # Place physics nodes at regular intervals (excluding endpoints which are spell nodes)
+        for i in range(1, self.num_physics_segments):
+            t = i / self.num_physics_segments
+            target_dist = t * total_length
+            point, _ = self._get_point_at_distance(target_dist)
+            self.physics_nodes.append(point)
+
+        # Initialize tensions to 0
+        self.segment_tensions = [0.0] * (len(self.physics_nodes) + 1)
+        self.is_broken = False
+
+    def update_physics(self, dt: float):
+        """
+        Update physics nodes based on endpoint positions.
+        Calculate tension at each segment.
+
+        Args:
+            dt: Delta time in seconds
+        """
+        if self.is_broken or len(self.physics_nodes) == 0:
+            return
+
+        # Get current endpoint positions
+        start_pos = (self.start_node.x, self.start_node.y)
+        end_pos = (self.end_node.x, self.end_node.y)
+
+        # Build list of all points: start + physics_nodes + end
+        all_points = [start_pos] + self.physics_nodes + [end_pos]
+
+        # Calculate current total length
+        current_length = 0.0
+        for i in range(len(all_points) - 1):
+            dx = all_points[i + 1][0] - all_points[i][0]
+            dy = all_points[i + 1][1] - all_points[i][1]
+            current_length += math.sqrt(dx * dx + dy * dy)
+
+        # Calculate strain (stretch ratio)
+        strain = (current_length - self.rest_length) / self.rest_length if self.rest_length > 0 else 0
+
+        # Update physics node positions - they try to stay evenly distributed
+        # This creates a spring-like behavior
+        if len(self.physics_nodes) > 0:
+            new_physics_nodes = []
+            for i in range(len(self.physics_nodes)):
+                # Target position is evenly distributed between endpoints
+                t = (i + 1) / (len(self.physics_nodes) + 1)
+
+                # Linear interpolation between start and end
+                target_x = start_pos[0] + t * (end_pos[0] - start_pos[0])
+                target_y = start_pos[1] + t * (end_pos[1] - start_pos[1])
+
+                # Move current position toward target (spring behavior)
+                current = self.physics_nodes[i]
+                spring_factor = 0.3  # How fast nodes move toward target
+                new_x = current[0] + (target_x - current[0]) * spring_factor
+                new_y = current[1] + (target_y - current[1]) * spring_factor
+
+                new_physics_nodes.append((new_x, new_y))
+
+            self.physics_nodes = new_physics_nodes
+
+        # Recalculate all points after update
+        all_points = [start_pos] + self.physics_nodes + [end_pos]
+
+        # Calculate tension at each segment
+        self.segment_tensions = []
+        segment_rest_length = self.rest_length / (len(self.physics_nodes) + 1)
+
+        for i in range(len(all_points) - 1):
+            dx = all_points[i + 1][0] - all_points[i][0]
+            dy = all_points[i + 1][1] - all_points[i][1]
+            segment_length = math.sqrt(dx * dx + dy * dy)
+
+            # Tension is proportional to how much the segment is stretched
+            if segment_rest_length > 0:
+                segment_strain = (segment_length - segment_rest_length) / segment_rest_length
+                tension = max(0, segment_strain * 100)  # Scale for visibility
+            else:
+                tension = 0
+
+            self.segment_tensions.append(tension)
+
+        # Check if any segment exceeds tensile strength
+        max_tension = max(self.segment_tensions) if self.segment_tensions else 0
+        if max_tension > self.tensile_strength:
+            self.is_broken = True
+
+    def get_max_tension(self) -> float:
+        """Get the maximum tension across all segments."""
+        if not self.segment_tensions:
+            return 0.0
+        return max(self.segment_tensions)
+
     def reset_bezier_handles(self):
         """Reset bezier handles to straight-line positions (1/3 and 2/3 along edge)."""
         start_x, start_y = self.start_node.x, self.start_node.y
@@ -403,7 +522,7 @@ class Edge(SpellGraphEntity):
         tension_values = self._calculate_tensions()
         points = self.get_points()
 
-        return {
+        info = {
             "ID": self.entity_id,
             "Type": "Edge",
             "Start Node": self.start_node.entity_id,
@@ -413,6 +532,16 @@ class Edge(SpellGraphEntity):
             "Avg Tension": f"{avg_tension:.3f}",
             "Max Tension": f"{max(tension_values):.3f}" if tension_values else "0.000"
         }
+
+        # Add physics simulation info when active
+        if self.is_broken:
+            info["Status"] = "BROKEN"
+        elif len(self.physics_nodes) > 0:
+            info["Status"] = "Simulating"
+            info["Physics Tension"] = f"{self.get_max_tension():.1f}"
+            info["Tensile Strength"] = f"{self.tensile_strength:.1f}"
+
+        return info
 
     def contains_point(self, x: float, y: float, transform: 'CoordinateTransform') -> bool:
         """
@@ -630,6 +759,17 @@ class Edge(SpellGraphEntity):
         Args:
             transform: Coordinate transform for world-to-screen conversion
         """
+        # If broken, draw as faded/dashed
+        if self.is_broken:
+            self._draw_broken(transform)
+            return
+
+        # If physics simulation is active, draw physics segments
+        if len(self.physics_nodes) > 0:
+            self._draw_physics_segments(transform)
+            return
+
+        # Normal drawing
         points = self.get_points()
         if len(points) < 2:
             return
@@ -673,3 +813,69 @@ class Edge(SpellGraphEntity):
             # Draw outline only when selected, filled when not selected
             self._draw_arrow(arrow_pos, arrow_angle, arrow_color, transform,
                            arrow_size=arrow_screen_size, outline_only=self.is_selected)
+
+    def _draw_broken(self, transform: 'CoordinateTransform'):
+        """Draw a broken edge as faded segments."""
+        start_screen = transform.world_to_screen(self.start_node.x, self.start_node.y)
+        end_screen = transform.world_to_screen(self.end_node.x, self.end_node.y)
+
+        # Draw as dashed gray line
+        broken_color = (128, 128, 128, 128)  # Semi-transparent gray
+
+        # Draw dashed effect by drawing short segments
+        dx = end_screen[0] - start_screen[0]
+        dy = end_screen[1] - start_screen[1]
+        length = math.sqrt(dx * dx + dy * dy)
+
+        if length > 0:
+            dash_length = 10
+            num_dashes = int(length / (dash_length * 2))
+            for i in range(num_dashes):
+                t1 = (i * 2 * dash_length) / length
+                t2 = ((i * 2 + 1) * dash_length) / length
+                if t2 > 1:
+                    t2 = 1
+
+                x1 = start_screen[0] + t1 * dx
+                y1 = start_screen[1] + t1 * dy
+                x2 = start_screen[0] + t2 * dx
+                y2 = start_screen[1] + t2 * dy
+
+                arcade.draw_line(x1, y1, x2, y2, broken_color, 2)
+
+    def _draw_physics_segments(self, transform: 'CoordinateTransform'):
+        """Draw edge with physics segments showing tension."""
+        start_pos = (self.start_node.x, self.start_node.y)
+        end_pos = (self.end_node.x, self.end_node.y)
+
+        # Build all points: start + physics_nodes + end
+        all_points = [start_pos] + self.physics_nodes + [end_pos]
+
+        # Draw each segment with color based on tension
+        for i in range(len(all_points) - 1):
+            p1_screen = transform.world_to_screen(all_points[i][0], all_points[i][1])
+            p2_screen = transform.world_to_screen(all_points[i + 1][0], all_points[i + 1][1])
+
+            # Color based on tension (green -> yellow -> red)
+            tension = self.segment_tensions[i] if i < len(self.segment_tensions) else 0
+            tension_ratio = min(tension / self.tensile_strength, 1.0)
+
+            if tension_ratio < 0.5:
+                # Green to yellow
+                r = int(tension_ratio * 2 * 255)
+                g = 255
+                b = 0
+            else:
+                # Yellow to red
+                r = 255
+                g = int((1 - (tension_ratio - 0.5) * 2) * 255)
+                b = 0
+
+            segment_color = (r, g, b)
+            arcade.draw_line(p1_screen[0], p1_screen[1], p2_screen[0], p2_screen[1], segment_color, 4)
+
+        # Draw physics nodes as small circles
+        for node_pos in self.physics_nodes:
+            node_screen = transform.world_to_screen(node_pos[0], node_pos[1])
+            arcade.draw_circle_filled(node_screen[0], node_screen[1], 4, (100, 100, 100))
+            arcade.draw_circle_outline(node_screen[0], node_screen[1], 4, (50, 50, 50), 1)

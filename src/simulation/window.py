@@ -291,12 +291,17 @@ class GraphSimulation(arcade.Window):
             'bezier_handles': [
                 (edge.bezier_handle1, edge.bezier_handle2)
                 for edge in self.edges
-            ]
+            ],
+            'edge_broken_states': [edge.is_broken for edge in self.edges]
         }
+
+        # Initialize physics for all edges
+        for edge in self.edges:
+            edge.init_physics()
 
         self.is_simulating = True
         self.simulate_button.text = "Stop Sim"
-        print("Simulation started - nodes will now repel each other")
+        print("Simulation started - nodes will repel, edges will stretch")
 
     def _stop_simulation(self):
         """Stop simulation and restore saved state."""
@@ -306,10 +311,15 @@ class GraphSimulation(arcade.Window):
                 if i < len(self.saved_state['node_positions']):
                     node.x, node.y = self.saved_state['node_positions'][i]
 
-            # Restore bezier handles
+            # Restore bezier handles and broken states
             for i, edge in enumerate(self.edges):
                 if i < len(self.saved_state['bezier_handles']):
                     edge.bezier_handle1, edge.bezier_handle2 = self.saved_state['bezier_handles'][i]
+                if i < len(self.saved_state['edge_broken_states']):
+                    edge.is_broken = self.saved_state['edge_broken_states'][i]
+                # Clear physics nodes
+                edge.physics_nodes = []
+                edge.segment_tensions = []
 
             self.saved_state = None
 
@@ -595,6 +605,10 @@ sys.exit(0)
                 dx, dy = velocities[i]
                 node.x += dx
                 node.y += dy
+
+            # Update edge physics (tension calculation, breaking)
+            for edge in self.edges:
+                edge.update_physics(scaled_delta)
 
         # Update cursor traversal with scaled time
         self.cursor_manager.update(scaled_delta, self.nodes, self.edges)
