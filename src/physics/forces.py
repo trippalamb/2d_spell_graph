@@ -7,14 +7,16 @@ if TYPE_CHECKING:
     from src.core.edge import Edge
 
 # Charge interaction constant (scaled for simulation)
-# Increased to make color changes visible at typical screen distances (100-1000px)
+# Used for instability calculation (visual feedback, not movement)
 CHARGE_CONSTANT = 500000.0
 
 # Repulsion constant for simulation mode (like charges repel)
-REPULSION_CONSTANT = 5000.0
+# Lower values = gentler repulsion between nodes
+REPULSION_CONSTANT = 100.0
 
 # Edge spring constant - how strongly edges pull nodes together
-EDGE_SPRING_CONSTANT = 50.0
+# Should roughly balance repulsion for stable configurations
+EDGE_SPRING_CONSTANT = 2.0
 
 
 def get_charge_product(node1: 'Node', node2: 'Node', charge_type: str = "alpha") -> float:

@@ -591,14 +591,14 @@ sys.exit(0)
         Args:
             delta_time: Time since last update in seconds
         """
-        # Apply time scale to simulation
-        scaled_delta = delta_time * self.time_scale
-
-        # Update forces and instability for all nodes
+        # Update forces and instability for all nodes (always runs for visual feedback)
         update_node_forces(self.nodes)
 
         # Apply physics simulation if running
         if self.is_simulating:
+            # Apply time scale only during simulation
+            scaled_delta = delta_time * self.time_scale
+
             # Calculate repulsion forces (nodes push each other apart)
             repulsion_velocities = apply_repulsion_forces(self.nodes, scaled_delta)
 
@@ -616,8 +616,8 @@ sys.exit(0)
             for edge in self.edges:
                 edge.update_physics(scaled_delta)
 
-        # Update cursor traversal with scaled time
-        self.cursor_manager.update(scaled_delta, self.nodes, self.edges)
+            # Update cursor traversal only during simulation
+            self.cursor_manager.update(scaled_delta, self.nodes, self.edges)
 
         # Update hovered entity
         self._update_hovered_entity()
