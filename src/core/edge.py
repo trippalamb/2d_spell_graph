@@ -31,6 +31,7 @@ class Edge(SpellGraphEntity):
         bezier_handle1: First bezier control handle (near start)
         bezier_handle2: Second bezier control handle (near end)
         num_segments: Number of segments to render the bezier curve
+        is_selected: Whether this edge is currently selected
     """
 
     def __init__(self, start_node: 'Node', end_node: 'Node',
@@ -52,6 +53,12 @@ class Edge(SpellGraphEntity):
         self.start_node = start_node
         self.end_node = end_node
         self.num_segments = 10  # Number of segments to render bezier curve
+        self.is_selected = False  # Whether this edge is currently selected
+
+        # Arrow properties (cached for hit detection)
+        self._arrow_position: Optional[Tuple[float, float]] = None
+        self._arrow_angle: float = 0.0
+        self._arrow_size: float = 14  # Slightly larger for visibility
 
         # Initialize bezier handles at 1/3 and 2/3 positions (straight line)
         self.bezier_handle1: Optional[Tuple[float, float]] = None
@@ -159,6 +166,119 @@ class Edge(SpellGraphEntity):
                 start_x + 2 * (end_x - start_x) / 3,
                 start_y + 2 * (end_y - start_y) / 3
             )
+
+    def get_arrow_position(self) -> Tuple[Tuple[float, float], float]:
+        """
+        Get the current arrow position and angle.
+
+        Returns:
+            Tuple of ((x, y), angle) for the arrow
+        """
+        points = self.get_points()
+        if len(points) < 2:
+            return ((0, 0), 0.0)
+
+        # Find which segment contains the 50% distance mark
+        total_length = self._get_total_length()
+        if total_length <= 0:
+            return ((points[0][0], points[0][1]), 0.0)
+
+        target_distance = total_length * 0.5
+        current_distance = 0.0
+        middle_segment_idx = 0
+
+        # Find the segment that contains the midpoint
+        for i in range(len(points) - 1):
+            p1 = points[i]
+            p2 = points[i + 1]
+            dx = p2[0] - p1[0]
+            dy = p2[1] - p1[1]
+            segment_length = math.sqrt(dx * dx + dy * dy)
+
+            if current_distance + segment_length >= target_distance:
+                middle_segment_idx = i
+                break
+
+            current_distance += segment_length
+
+        # Get the two points of the segment containing the midpoint
+        p1 = points[middle_segment_idx]
+        p2 = points[middle_segment_idx + 1]
+
+        # Position arrow at midpoint of this segment
+        arrow_x = (p1[0] + p2[0]) / 2
+        arrow_y = (p1[1] + p2[1]) / 2
+
+        # Calculate direction angle
+        dx = p2[0] - p1[0]
+        dy = p2[1] - p1[1]
+        arrow_angle = math.atan2(dy, dx)
+
+        # Offset perpendicular to the path for visibility
+        offset_distance = 12  # world units offset from the path
+        offset_angle = arrow_angle + math.pi / 2  # perpendicular to path
+        offset_x = arrow_x + offset_distance * math.cos(offset_angle)
+        offset_y = arrow_y + offset_distance * math.sin(offset_angle)
+
+        # Cache the position for hit detection
+        self._arrow_position = (offset_x, offset_y)
+        self._arrow_angle = arrow_angle
+
+        return ((offset_x, offset_y), arrow_angle)
+
+    def arrow_contains_point(self, x: float, y: float, threshold: float = 18) -> bool:
+        """
+        Check if a point is near the direction arrow.
+
+        Args:
+            x: X coordinate in world space
+            y: Y coordinate in world space
+            threshold: Distance threshold for hit detection
+
+        Returns:
+            True if point is within threshold of the arrow
+        """
+        # Update arrow position
+        self.get_arrow_position()
+
+        if self._arrow_position is None:
+            return False
+
+        # Check distance from point to arrow center
+        dx = x - self._arrow_position[0]
+        dy = y - self._arrow_position[1]
+        distance = math.sqrt(dx * dx + dy * dy)
+
+        return distance <= threshold
+
+    def reverse_direction(self):
+        """
+        Reverse the direction of this edge by swapping start and end nodes.
+        Also updates the node-edge relationships.
+        """
+        # Swap the nodes
+        self.start_node, self.end_node = self.end_node, self.start_node
+
+        # Swap the bezier handles (so the curve shape is preserved but reversed)
+        self.bezier_handle1, self.bezier_handle2 = self.bezier_handle2, self.bezier_handle1
+
+        # Update node-edge relationships
+        # Remove old relationships and add new ones
+        for node_edge_pair in self.start_node.edges[:]:
+            edge, direction = node_edge_pair
+            if edge == self:
+                self.start_node.edges.remove(node_edge_pair)
+                break
+
+        for node_edge_pair in self.end_node.edges[:]:
+            edge, direction = node_edge_pair
+            if edge == self:
+                self.end_node.edges.remove(node_edge_pair)
+                break
+
+        # Add new relationships
+        self.start_node.add_edge(self, EdgeDirection.OUTGOING)
+        self.end_node.add_edge(self, EdgeDirection.INCOMING)
 
     def draw_handles(self, transform: 'CoordinateTransform'):
         """
@@ -419,25 +539,30 @@ class Edge(SpellGraphEntity):
         return (points[0], 0.0)
 
     def _draw_arrow(self, position: Tuple[float, float], angle: float, color: tuple,
-                    transform: 'CoordinateTransform', arrow_size: float = 12):
+                    transform: 'CoordinateTransform', arrow_size: float = 14):
         """
-        Draw a directional arrow at a specific position.
+        Draw a directional arrow (isosceles triangle) at a specific position.
+
+        The arrow is an isosceles triangle - longer and narrower than equilateral
+        to make direction more obvious.
 
         Args:
             position: (x, y) position of the arrow in world coordinates
             angle: Angle in radians for arrow direction
             color: RGB tuple for arrow color
             transform: Coordinate transform for world-to-screen conversion
-            arrow_size: Size of the arrow in world units
+            arrow_size: Length of the arrow in world units
         """
         x, y = position
 
         # Arrow tip is at the position
         tip_x, tip_y = x, y
 
-        # Calculate the two back points of the arrow
-        back_angle1 = angle + math.pi - math.pi / 6  # 150 degrees
-        back_angle2 = angle + math.pi + math.pi / 6  # 210 degrees
+        # Isosceles triangle: narrower angle (pi/10 = 18 degrees instead of pi/6 = 30 degrees)
+        # This makes the arrow longer and more pointy
+        half_angle = math.pi / 10  # 18 degrees for a narrower, more obvious arrow
+        back_angle1 = angle + math.pi - half_angle
+        back_angle2 = angle + math.pi + half_angle
 
         back_x1 = tip_x + arrow_size * math.cos(back_angle1)
         back_y1 = tip_y + arrow_size * math.sin(back_angle1)
@@ -458,6 +583,15 @@ class Edge(SpellGraphEntity):
             color
         )
 
+        # Draw outline for better visibility
+        arcade.draw_triangle_outline(
+            screen_tip[0], screen_tip[1],
+            screen_back1[0], screen_back1[1],
+            screen_back2[0], screen_back2[1],
+            (0, 0, 0),  # Black outline
+            2
+        )
+
     def draw(self, transform: 'CoordinateTransform'):
         """
         Draw the edge on screen with directional arrow.
@@ -470,6 +604,21 @@ class Edge(SpellGraphEntity):
             return
 
         color = self.get_color()
+        line_width = 3
+
+        # Highlight selected edge with cyan color and thicker line
+        if self.is_selected:
+            highlight_color = (0, 200, 255)  # Cyan highlight
+            line_width = 5
+
+            # Draw highlight outline behind the edge
+            for i in range(len(points) - 1):
+                p1_world = points[i]
+                p2_world = points[i + 1]
+                p1_screen = transform.world_to_screen(p1_world[0], p1_world[1])
+                p2_screen = transform.world_to_screen(p2_world[0], p2_world[1])
+                arcade.draw_line(p1_screen[0], p1_screen[1], p2_screen[0], p2_screen[1],
+                                highlight_color, line_width + 4)
 
         # Draw line segments (converting world to screen coordinates)
         for i in range(len(points) - 1):
@@ -479,48 +628,10 @@ class Edge(SpellGraphEntity):
             p1_screen = transform.world_to_screen(p1_world[0], p1_world[1])
             p2_screen = transform.world_to_screen(p2_world[0], p2_world[1])
 
-            arcade.draw_line(p1_screen[0], p1_screen[1], p2_screen[0], p2_screen[1], color, 3)
+            arcade.draw_line(p1_screen[0], p1_screen[1], p2_screen[0], p2_screen[1], color, line_width)
 
-        # Draw directional arrow at path midpoint (on the containing segment)
+        # Draw directional arrow at path midpoint
         if len(points) >= 2:
-            # Find which segment contains the 50% distance mark
-            total_length = self._get_total_length()
-            if total_length > 0:
-                target_distance = total_length * 0.5
-                current_distance = 0.0
-                middle_segment_idx = 0
-
-                # Find the segment that contains the midpoint
-                for i in range(len(points) - 1):
-                    p1 = points[i]
-                    p2 = points[i + 1]
-                    dx = p2[0] - p1[0]
-                    dy = p2[1] - p1[1]
-                    segment_length = math.sqrt(dx * dx + dy * dy)
-
-                    if current_distance + segment_length >= target_distance:
-                        middle_segment_idx = i
-                        break
-
-                    current_distance += segment_length
-
-                # Get the two points of the segment containing the midpoint
-                p1 = points[middle_segment_idx]
-                p2 = points[middle_segment_idx + 1]
-
-                # Position arrow at midpoint of this segment (not at the exact distance point)
-                arrow_x = (p1[0] + p2[0]) / 2
-                arrow_y = (p1[1] + p2[1]) / 2
-
-                # Calculate direction angle
-                dx = p2[0] - p1[0]
-                dy = p2[1] - p1[1]
-                arrow_angle = math.atan2(dy, dx)
-
-                # Small offset perpendicular to the path for visibility
-                offset_distance = 12  # world units offset from the path
-                offset_angle = arrow_angle + math.pi / 2  # perpendicular to path
-                offset_x = arrow_x + offset_distance * math.cos(offset_angle)
-                offset_y = arrow_y + offset_distance * math.sin(offset_angle)
-
-                self._draw_arrow((offset_x, offset_y), arrow_angle, color, transform, arrow_size=10)
+            arrow_pos, arrow_angle = self.get_arrow_position()
+            arrow_color = (0, 200, 255) if self.is_selected else color
+            self._draw_arrow(arrow_pos, arrow_angle, arrow_color, transform, arrow_size=self._arrow_size)

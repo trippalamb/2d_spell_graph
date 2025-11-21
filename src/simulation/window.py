@@ -118,6 +118,28 @@ class GraphSimulation(arcade.Window):
         # Create UI buttons
         self._setup_ui()
 
+    def _select_edge(self, edge: Edge):
+        """
+        Select an edge and update is_selected state.
+
+        Args:
+            edge: The edge to select
+        """
+        # Deselect previous edge if any
+        if self.selected_edge is not None:
+            self.selected_edge.is_selected = False
+
+        # Select new edge
+        self.selected_edge = edge
+        if edge is not None:
+            edge.is_selected = True
+
+    def _deselect_edge(self):
+        """Deselect the currently selected edge."""
+        if self.selected_edge is not None:
+            self.selected_edge.is_selected = False
+            self.selected_edge = None
+
     def _setup_ui(self):
         """Set up UI buttons for cursor control."""
         # Create a vertical box for buttons
@@ -479,7 +501,17 @@ class GraphSimulation(arcade.Window):
                     self.last_click_time = current_time
                     return
 
-            # Priority 2: Check if clicking on a node
+            # Priority 2: Check if clicking on an edge's arrow (to reverse direction)
+            for edge in self.edges:
+                if edge.arrow_contains_point(world_x, world_y):
+                    # Reverse the edge direction
+                    edge.reverse_direction()
+                    # Rebuild edge graph after direction change
+                    self.cursor_manager.build_edge_graph(self.nodes, self.edges)
+                    self.last_click_time = current_time
+                    return
+
+            # Priority 3: Check if clicking on a node
             for node in self.nodes:
                 if node.contains_point(world_x, world_y, self.transform):
                     self.dragged_node = node
@@ -487,19 +519,19 @@ class GraphSimulation(arcade.Window):
                     self.drag_offset_x = world_x - node.x
                     self.drag_offset_y = world_y - node.y
                     # Deselect edge when dragging node
-                    self.selected_edge = None
+                    self._deselect_edge()
                     self.last_click_time = current_time
                     return
 
-            # Priority 3: Check if clicking on an edge to select it
+            # Priority 4: Check if clicking on an edge to select it
             for edge in self.edges:
                 if edge.contains_point(world_x, world_y, self.transform):
-                    self.selected_edge = edge
+                    self._select_edge(edge)
                     self.last_click_time = current_time
                     return
 
             # Clicked on empty space - deselect edge
-            self.selected_edge = None
+            self._deselect_edge()
             self.last_click_time = current_time
 
         # Start panning on right mouse button
