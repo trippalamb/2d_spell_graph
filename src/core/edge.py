@@ -70,11 +70,16 @@ class Edge(SpellGraphEntity):
 
         # Physics simulation properties
         self.physics_nodes: List[Tuple[float, float]] = []  # Internal nodes along the edge
-        self.segment_tensions: List[float] = []  # Tension at each segment
+        self.segment_tensions: List[float] = []  # Tension at each segment (tensile strain)
         self.tensile_strength: float = 50.0  # Max tension before breaking
         self.is_broken: bool = False  # Whether the edge has snapped
         self.rest_length: float = 0.0  # Original length for strain calculation
         self.num_physics_segments: int = 5  # Number of internal segments for physics
+
+        # Flexural (bending) properties
+        self.original_angles: List[float] = []  # Original angles at each physics node
+        self.angular_strains: List[float] = []  # Current angular strain at each physics node
+        self.flexural_strength: float = 1.5  # Max angular strain (radians) before breaking
 
     def init_physics(self):
         """Initialize physics nodes along the edge path for simulation."""
@@ -89,6 +94,8 @@ class Edge(SpellGraphEntity):
         # These are separate from bezier visualization - they're for physics simulation
         self.physics_nodes = []
         self.segment_tensions = []
+        self.original_angles = []
+        self.angular_strains = []
 
         total_length = self.rest_length
         if total_length <= 0:
@@ -103,12 +110,64 @@ class Edge(SpellGraphEntity):
 
         # Initialize tensions to 0
         self.segment_tensions = [0.0] * (len(self.physics_nodes) + 1)
+
+        # Calculate and store original angles at each physics node
+        # Angle is measured as the angle formed by the two adjacent segments
+        start_pos = (self.start_node.x, self.start_node.y)
+        end_pos = (self.end_node.x, self.end_node.y)
+        all_points = [start_pos] + self.physics_nodes + [end_pos]
+
+        for i in range(1, len(all_points) - 1):  # For each physics node
+            angle = self._calculate_angle_at_point(all_points, i)
+            self.original_angles.append(angle)
+
+        # Initialize angular strains to 0
+        self.angular_strains = [0.0] * len(self.original_angles)
         self.is_broken = False
+
+    def _calculate_angle_at_point(self, points: List[Tuple[float, float]], index: int) -> float:
+        """
+        Calculate the angle at a point formed by its adjacent segments.
+
+        Args:
+            points: List of all points (start + physics_nodes + end)
+            index: Index of the point to calculate angle at (must be interior point)
+
+        Returns:
+            Angle in radians (0 = straight, pi = completely bent back)
+        """
+        if index <= 0 or index >= len(points) - 1:
+            return 0.0
+
+        # Get the three points
+        p_prev = points[index - 1]
+        p_curr = points[index]
+        p_next = points[index + 1]
+
+        # Calculate vectors from current point to neighbors
+        v1_x = p_prev[0] - p_curr[0]
+        v1_y = p_prev[1] - p_curr[1]
+        v2_x = p_next[0] - p_curr[0]
+        v2_y = p_next[1] - p_curr[1]
+
+        # Calculate magnitudes
+        mag1 = math.sqrt(v1_x * v1_x + v1_y * v1_y)
+        mag2 = math.sqrt(v2_x * v2_x + v2_y * v2_y)
+
+        if mag1 < 0.001 or mag2 < 0.001:
+            return math.pi  # Straight line if points overlap
+
+        # Calculate dot product and angle
+        dot = v1_x * v2_x + v1_y * v2_y
+        cos_angle = max(-1.0, min(1.0, dot / (mag1 * mag2)))
+        angle = math.acos(cos_angle)
+
+        return angle  # 0 = completely folded back, pi = straight
 
     def update_physics(self, dt: float):
         """
         Update physics nodes based on endpoint positions.
-        Calculate tension at each segment.
+        Calculate tensile and flexural strain at each segment/node.
 
         Args:
             dt: Delta time in seconds
@@ -120,48 +179,50 @@ class Edge(SpellGraphEntity):
         start_pos = (self.start_node.x, self.start_node.y)
         end_pos = (self.end_node.x, self.end_node.y)
 
-        # Build list of all points: start + physics_nodes + end
-        all_points = [start_pos] + self.physics_nodes + [end_pos]
-
-        # Calculate current total length
-        current_length = 0.0
-        for i in range(len(all_points) - 1):
-            dx = all_points[i + 1][0] - all_points[i][0]
-            dy = all_points[i + 1][1] - all_points[i][1]
-            current_length += math.sqrt(dx * dx + dy * dy)
-
-        # Calculate strain (stretch ratio)
-        strain = (current_length - self.rest_length) / self.rest_length if self.rest_length > 0 else 0
-
-        # Update physics node positions - they try to stay evenly distributed
-        # This creates a spring-like behavior
-        if len(self.physics_nodes) > 0:
-            new_physics_nodes = []
-            for i in range(len(self.physics_nodes)):
-                # Target position is evenly distributed between endpoints
-                t = (i + 1) / (len(self.physics_nodes) + 1)
-
-                # Linear interpolation between start and end
-                target_x = start_pos[0] + t * (end_pos[0] - start_pos[0])
-                target_y = start_pos[1] + t * (end_pos[1] - start_pos[1])
-
-                # Move current position toward target (spring behavior)
-                current = self.physics_nodes[i]
-                spring_factor = 0.3  # How fast nodes move toward target
-                new_x = current[0] + (target_x - current[0]) * spring_factor
-                new_y = current[1] + (target_y - current[1]) * spring_factor
-
-                new_physics_nodes.append((new_x, new_y))
-
-            self.physics_nodes = new_physics_nodes
-
-        # Recalculate all points after update
-        all_points = [start_pos] + self.physics_nodes + [end_pos]
-
-        # Calculate tension at each segment
-        self.segment_tensions = []
+        # Physics nodes resist bending - they maintain rigid connections
+        # Calculate where nodes SHOULD be based on rigid rod behavior
+        # Each segment maintains its original length ratio
         segment_rest_length = self.rest_length / (len(self.physics_nodes) + 1)
 
+        # Update physics nodes to maintain rigid segments from start
+        # Each node is placed at segment_rest_length from the previous point
+        # in the direction toward where it needs to go
+        new_physics_nodes = []
+        prev_point = start_pos
+
+        for i in range(len(self.physics_nodes)):
+            # Direction from prev to next target (weighted average toward end)
+            if i < len(self.physics_nodes) - 1:
+                next_target = self.physics_nodes[i + 1]
+            else:
+                next_target = end_pos
+
+            # Current node position
+            current = self.physics_nodes[i]
+
+            # Calculate direction from previous point toward current/next
+            dx = current[0] - prev_point[0]
+            dy = current[1] - prev_point[1]
+            dist = math.sqrt(dx * dx + dy * dy)
+
+            if dist > 0.001:
+                # Place node at rest length from previous
+                new_x = prev_point[0] + (dx / dist) * segment_rest_length
+                new_y = prev_point[1] + (dy / dist) * segment_rest_length
+            else:
+                new_x = current[0]
+                new_y = current[1]
+
+            new_physics_nodes.append((new_x, new_y))
+            prev_point = (new_x, new_y)
+
+        self.physics_nodes = new_physics_nodes
+
+        # Build all points list
+        all_points = [start_pos] + self.physics_nodes + [end_pos]
+
+        # Calculate tension (tensile strain) at each segment
+        self.segment_tensions = []
         for i in range(len(all_points) - 1):
             dx = all_points[i + 1][0] - all_points[i][0]
             dy = all_points[i + 1][1] - all_points[i][1]
@@ -176,9 +237,31 @@ class Edge(SpellGraphEntity):
 
             self.segment_tensions.append(tension)
 
+        # Calculate angular strain (flexural) at each physics node
+        self.angular_strains = []
+        for i in range(len(self.physics_nodes)):
+            # Index in all_points is i+1 (since all_points[0] is start)
+            point_index = i + 1
+            current_angle = self._calculate_angle_at_point(all_points, point_index)
+
+            if i < len(self.original_angles):
+                original_angle = self.original_angles[i]
+                # Angular strain is absolute difference from original
+                angular_strain = abs(current_angle - original_angle)
+            else:
+                angular_strain = 0.0
+
+            self.angular_strains.append(angular_strain)
+
         # Check if any segment exceeds tensile strength
         max_tension = max(self.segment_tensions) if self.segment_tensions else 0
         if max_tension > self.tensile_strength:
+            self.is_broken = True
+            return
+
+        # Check if any node exceeds flexural strength
+        max_angular_strain = max(self.angular_strains) if self.angular_strains else 0
+        if max_angular_strain > self.flexural_strength:
             self.is_broken = True
 
     def get_max_tension(self) -> float:
@@ -186,6 +269,12 @@ class Edge(SpellGraphEntity):
         if not self.segment_tensions:
             return 0.0
         return max(self.segment_tensions)
+
+    def get_max_angular_strain(self) -> float:
+        """Get the maximum angular strain across all physics nodes."""
+        if not self.angular_strains:
+            return 0.0
+        return max(self.angular_strains)
 
     def reset_bezier_handles(self):
         """Reset bezier handles to straight-line positions (1/3 and 2/3 along edge)."""
@@ -538,8 +627,8 @@ class Edge(SpellGraphEntity):
             info["Status"] = "BROKEN"
         elif len(self.physics_nodes) > 0:
             info["Status"] = "Simulating"
-            info["Physics Tension"] = f"{self.get_max_tension():.1f}"
-            info["Tensile Strength"] = f"{self.tensile_strength:.1f}"
+            info["Tensile Strain"] = f"{self.get_max_tension():.1f} / {self.tensile_strength:.1f}"
+            info["Angular Strain"] = f"{self.get_max_angular_strain():.2f} / {self.flexural_strength:.2f}"
 
         return info
 
@@ -843,39 +932,81 @@ class Edge(SpellGraphEntity):
 
                 arcade.draw_line(x1, y1, x2, y2, broken_color, 2)
 
+    def _hsl_to_rgb(self, h: float, s: float, l: float) -> Tuple[int, int, int]:
+        """
+        Convert HSL color to RGB.
+
+        Args:
+            h: Hue (0.0 to 1.0)
+            s: Saturation (0.0 to 1.0)
+            l: Lightness (0.0 to 1.0)
+
+        Returns:
+            RGB tuple (0-255 range)
+        """
+        import colorsys
+        r, g, b = colorsys.hls_to_rgb(h, l, s)
+        return (int(r * 255), int(g * 255), int(b * 255))
+
     def _draw_physics_segments(self, transform: 'CoordinateTransform'):
-        """Draw edge with physics segments showing tension."""
+        """
+        Draw edge with physics segments showing strain.
+
+        Color model:
+        - Hue: Angular/flexural strain (green=0 -> yellow -> red=max)
+        - Lightness: Tensile strain (dark=low -> light=high, range 0.3-0.7)
+        """
         start_pos = (self.start_node.x, self.start_node.y)
         end_pos = (self.end_node.x, self.end_node.y)
 
         # Build all points: start + physics_nodes + end
         all_points = [start_pos] + self.physics_nodes + [end_pos]
 
-        # Draw each segment with color based on tension
+        # Get angular strains at each physics node (for hue gradient)
+        # Extend to include endpoints with 0 strain
+        node_angular_strains = [0.0] + list(self.angular_strains) + [0.0]
+
+        # Draw each segment with color gradient based on strain
         for i in range(len(all_points) - 1):
             p1_screen = transform.world_to_screen(all_points[i][0], all_points[i][1])
             p2_screen = transform.world_to_screen(all_points[i + 1][0], all_points[i + 1][1])
 
-            # Color based on tension (green -> yellow -> red)
+            # Get tensile strain for this segment (for lightness)
             tension = self.segment_tensions[i] if i < len(self.segment_tensions) else 0
             tension_ratio = min(tension / self.tensile_strength, 1.0)
+            # Lightness: 0.3 (dark, low strain) to 0.7 (light, high strain)
+            lightness = 0.3 + tension_ratio * 0.4
 
-            if tension_ratio < 0.5:
-                # Green to yellow
-                r = int(tension_ratio * 2 * 255)
-                g = 255
-                b = 0
-            else:
-                # Yellow to red
-                r = 255
-                g = int((1 - (tension_ratio - 0.5) * 2) * 255)
-                b = 0
+            # Get angular strain at start and end nodes of this segment (for hue)
+            angular_strain_start = node_angular_strains[i] if i < len(node_angular_strains) else 0
+            angular_strain_end = node_angular_strains[i + 1] if i + 1 < len(node_angular_strains) else 0
 
-            segment_color = (r, g, b)
+            # Average angular strain for segment hue
+            avg_angular_strain = (angular_strain_start + angular_strain_end) / 2
+            angular_ratio = min(avg_angular_strain / self.flexural_strength, 1.0)
+
+            # Hue: 0.33 (green) -> 0.17 (yellow) -> 0.0 (red)
+            # Map angular_ratio 0->1 to hue 0.33->0.0
+            hue = 0.33 * (1.0 - angular_ratio)
+
+            # Full saturation
+            saturation = 1.0
+
+            # Convert to RGB
+            segment_color = self._hsl_to_rgb(hue, saturation, lightness)
             arcade.draw_line(p1_screen[0], p1_screen[1], p2_screen[0], p2_screen[1], segment_color, 4)
 
-        # Draw physics nodes as small circles
-        for node_pos in self.physics_nodes:
+        # Draw physics nodes as small circles with color based on angular strain
+        for i, node_pos in enumerate(self.physics_nodes):
             node_screen = transform.world_to_screen(node_pos[0], node_pos[1])
-            arcade.draw_circle_filled(node_screen[0], node_screen[1], 4, (100, 100, 100))
+
+            # Node color based on its angular strain
+            if i < len(self.angular_strains):
+                angular_ratio = min(self.angular_strains[i] / self.flexural_strength, 1.0)
+                hue = 0.33 * (1.0 - angular_ratio)
+                node_color = self._hsl_to_rgb(hue, 1.0, 0.5)
+            else:
+                node_color = (100, 100, 100)
+
+            arcade.draw_circle_filled(node_screen[0], node_screen[1], 4, node_color)
             arcade.draw_circle_outline(node_screen[0], node_screen[1], 4, (50, 50, 50), 1)

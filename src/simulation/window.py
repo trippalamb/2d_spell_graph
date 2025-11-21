@@ -259,7 +259,7 @@ class GraphSimulation(arcade.Window):
 
     def _on_restart(self, event):
         """Handle restart button click."""
-        self.cursor_manager.restart(self.nodes)
+        self.cursor_manager.restart(self.nodes, self.edges)
         self.play_pause_button.text = "Pause"
 
     def _on_repath_edges(self, event):
@@ -488,7 +488,7 @@ sys.exit(0)
 
                 self.load_config(filename)
                 self.cursor_manager.build_edge_graph(self.nodes, self.edges)
-                self.cursor_manager.restart(self.nodes)
+                self.cursor_manager.restart(self.nodes, self.edges)
                 print(f"Spell loaded from {filename}")
             except Exception as e:
                 import traceback
@@ -506,7 +506,7 @@ sys.exit(0)
 
         # Build edge graph and initialize cursor
         self.cursor_manager.build_edge_graph(self.nodes, self.edges)
-        self.cursor_manager.restart(self.nodes)
+        self.cursor_manager.restart(self.nodes, self.edges)
 
     def load_config(self, config_path: str):
         """

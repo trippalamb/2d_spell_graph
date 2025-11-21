@@ -11,12 +11,12 @@ if TYPE_CHECKING:
 CHARGE_CONSTANT = 500000.0
 
 # Repulsion constant for simulation mode (like charges repel)
-# Lower values = gentler repulsion between nodes
-REPULSION_CONSTANT = 100.0
+# Higher values = stronger repulsion between nodes
+REPULSION_CONSTANT = 500.0
 
 # Edge spring constant - how strongly edges pull nodes together
-# Should roughly balance repulsion for stable configurations
-EDGE_SPRING_CONSTANT = 2.0
+# Lower values = weaker spring resistance
+EDGE_SPRING_CONSTANT = 0.5
 
 
 def get_charge_product(node1: 'Node', node2: 'Node', charge_type: str = "alpha") -> float:

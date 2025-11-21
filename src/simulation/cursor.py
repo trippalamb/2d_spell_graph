@@ -195,14 +195,18 @@ class CursorManager:
             cursor = Cursor(node_index, target_idx, edge_idx, self.speed)
             self.cursors.append(cursor)
 
-    def restart(self, nodes: List[Node]):
+    def restart(self, nodes: List[Node], edges: List[Edge] = None):
         """
         Restart cursor traversal from the first node.
 
         Args:
             nodes: List of all nodes
+            edges: List of all edges (optional, rebuilds edge graph if provided)
         """
         self.cursors = []
+        # Rebuild edge graph if edges provided (accounts for node movement)
+        if edges is not None:
+            self.build_edge_graph(nodes, edges)
         if len(nodes) > 0:
             # Spawn initial cursors from node 0
             self.spawn_cursors_at_node(0)
