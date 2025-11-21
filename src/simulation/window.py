@@ -8,7 +8,7 @@ import re
 import time
 
 from src.core import Node, NodeType, Edge, EdgeDirection, SpellGraphEntity
-from src.physics import update_node_forces, apply_repulsion_forces
+from src.physics import update_node_forces, apply_repulsion_forces, apply_edge_spring_forces
 import copy
 from src.simulation.cursor import CursorManager
 from src.simulation.transform import CoordinateTransform
@@ -599,10 +599,16 @@ sys.exit(0)
 
         # Apply physics simulation if running
         if self.is_simulating:
-            # Calculate repulsion forces and apply to node positions
-            velocities = apply_repulsion_forces(self.nodes, scaled_delta)
+            # Calculate repulsion forces (nodes push each other apart)
+            repulsion_velocities = apply_repulsion_forces(self.nodes, scaled_delta)
+
+            # Calculate edge spring forces (edges pull connected nodes together)
+            spring_velocities = apply_edge_spring_forces(self.nodes, self.edges, scaled_delta)
+
+            # Apply combined forces to node positions
             for i, node in enumerate(self.nodes):
-                dx, dy = velocities[i]
+                dx = repulsion_velocities[i][0] + spring_velocities[i][0]
+                dy = repulsion_velocities[i][1] + spring_velocities[i][1]
                 node.x += dx
                 node.y += dy
 

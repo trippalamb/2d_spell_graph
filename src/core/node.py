@@ -16,9 +16,11 @@ class NodeType(Enum):
     BASIC = "basic"
 
 
-# Inherent force values for each node type
-NODE_TYPE_FORCES = {
-    NodeType.BASIC: 10.0,  # Base force value for basic nodes
+# Inherent charge values for each node type
+# Charges use Greek letter names (alpha, beta, gamma, etc.) to support multiple charge types
+# Nodes with the same charge type repel each other
+NODE_TYPE_CHARGES = {
+    NodeType.BASIC: {"alpha": 10.0},  # Base charge value for basic nodes
 }
 
 
@@ -30,7 +32,7 @@ class Node(SpellGraphEntity):
         x: X position in world coordinates
         y: Y position in world coordinates
         node_type: Type of the node (enum)
-        force: Current force value
+        charges: Dictionary of charge values by type (e.g., {"alpha": 10.0})
         instability: Accumulated force from other nodes
         edges: List of (edge, direction) tuples for attached edges
     """
@@ -52,8 +54,9 @@ class Node(SpellGraphEntity):
         self.x = x
         self.y = y
         self.node_type = node_type
-        # Inherent force based on node type (used for repulsion in simulation)
-        self.force = NODE_TYPE_FORCES.get(node_type, 10.0)
+        # Inherent charges based on node type (used for repulsion in simulation)
+        # Different charge types can have different attraction/repulsion behaviors
+        self.charges = NODE_TYPE_CHARGES.get(node_type, {"alpha": 10.0}).copy()
         self.instability = 0.0
         self.radius = 15  # Visual radius in world units
         self.edges: List[Tuple['Edge', 'EdgeDirection']] = []  # List of (edge, direction) tuples
@@ -94,15 +97,18 @@ class Node(SpellGraphEntity):
         Returns:
             Dictionary containing node information
         """
-        return {
+        info = {
             "ID": self.entity_id,
             "Type": "Node",
             "Node Type": self.node_type.value,
             "Position": f"({self.x:.1f}, {self.y:.1f})",
-            "Force": f"{self.force:.2f}",
             "Instability": f"{self.instability:.2f}",
             "Radius": f"{self.radius:.1f}"
         }
+        # Add charge values with Greek letter names
+        for charge_type, value in self.charges.items():
+            info[f"Charge ({charge_type})"] = f"{value:.2f}"
+        return info
 
     def contains_point(self, x: float, y: float, transform: 'CoordinateTransform') -> bool:
         """
