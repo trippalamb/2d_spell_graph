@@ -111,6 +111,9 @@ class GraphSimulation(arcade.Window):
         # Info window for entity hover
         self.info_window = InfoWindow()
 
+        # Time scale for simulation speed (0.1x to 10x)
+        self.time_scale = 1.0
+
         # UI Manager
         self.ui_manager = arcade.gui.UIManager()
         self.ui_manager.enable()
@@ -185,6 +188,25 @@ class GraphSimulation(arcade.Window):
         load_button.on_click = self._on_load
         v_box.add(load_button)
 
+        # Time scale label
+        self.time_scale_label = arcade.gui.UILabel(
+            text="Speed: 1.0x",
+            width=120,
+            text_color=(0, 0, 0)
+        )
+        v_box.add(self.time_scale_label)
+
+        # Time scale slider (0.1x to 10x, logarithmic feel)
+        # Slider value 0-100 maps to 0.1x-10x
+        self.time_scale_slider = arcade.gui.UISlider(
+            value=50,  # Default to 1.0x (middle)
+            min_value=0,
+            max_value=100,
+            width=120
+        )
+        self.time_scale_slider.on_change = self._on_time_scale_change
+        v_box.add(self.time_scale_slider)
+
         # Create an anchor layout to position the buttons
         anchor = arcade.gui.UIAnchorLayout()
         anchor.add(
@@ -196,6 +218,23 @@ class GraphSimulation(arcade.Window):
         )
 
         self.ui_manager.add(anchor)
+
+    def _on_time_scale_change(self, event):
+        """Handle time scale slider change."""
+        # Map slider value (0-100) to time scale (0.1x to 10x) using logarithmic scale
+        # At 0: 0.1x, at 50: 1.0x, at 100: 10x
+        slider_value = event.new_value
+        if slider_value <= 50:
+            # 0-50 maps to 0.1-1.0 (logarithmic)
+            t = slider_value / 50.0
+            self.time_scale = 0.1 * (10 ** t)  # 0.1 to 1.0
+        else:
+            # 50-100 maps to 1.0-10.0 (logarithmic)
+            t = (slider_value - 50) / 50.0
+            self.time_scale = 1.0 * (10 ** t)  # 1.0 to 10.0
+
+        # Update label
+        self.time_scale_label.text = f"Speed: {self.time_scale:.1f}x"
 
     def _on_play_pause(self, event):
         """Handle play/pause button click."""
@@ -432,11 +471,14 @@ class GraphSimulation(arcade.Window):
         Args:
             delta_time: Time since last update in seconds
         """
+        # Apply time scale to simulation
+        scaled_delta = delta_time * self.time_scale
+
         # Update forces and instability for all nodes
         update_node_forces(self.nodes)
 
-        # Update cursor traversal
-        self.cursor_manager.update(delta_time, self.nodes, self.edges)
+        # Update cursor traversal with scaled time
+        self.cursor_manager.update(scaled_delta, self.nodes, self.edges)
 
         # Update hovered entity
         self._update_hovered_entity()
@@ -501,11 +543,12 @@ class GraphSimulation(arcade.Window):
                     self.last_click_time = current_time
                     return
 
-            # Priority 2: Check if clicking on an edge's arrow (to reverse direction)
-            for edge in self.edges:
-                if edge.arrow_contains_point(world_x, world_y):
+            # Priority 2: Check if clicking on selected edge's arrow (to reverse direction)
+            # Arrows are only clickable when their edge is selected
+            if self.selected_edge is not None:
+                if self.selected_edge.arrow_contains_point(world_x, world_y):
                     # Reverse the edge direction
-                    edge.reverse_direction()
+                    self.selected_edge.reverse_direction()
                     # Rebuild edge graph after direction change
                     self.cursor_manager.build_edge_graph(self.nodes, self.edges)
                     self.last_click_time = current_time

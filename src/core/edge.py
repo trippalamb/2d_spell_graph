@@ -539,28 +539,36 @@ class Edge(SpellGraphEntity):
         return (points[0], 0.0)
 
     def _draw_arrow(self, position: Tuple[float, float], angle: float, color: tuple,
-                    transform: 'CoordinateTransform', arrow_size: float = 14):
+                    transform: 'CoordinateTransform', arrow_size: float = 14,
+                    outline_only: bool = False):
         """
         Draw a directional arrow (isosceles triangle) at a specific position.
 
-        The arrow is an isosceles triangle - longer and narrower than equilateral
-        to make direction more obvious.
+        The arrow is drawn in screen space so it maintains constant size regardless of zoom.
+        When outline_only is True, draws only the outline (for selected edges).
 
         Args:
             position: (x, y) position of the arrow in world coordinates
             angle: Angle in radians for arrow direction
             color: RGB tuple for arrow color
             transform: Coordinate transform for world-to-screen conversion
-            arrow_size: Length of the arrow in world units
+            arrow_size: Length of the arrow in screen pixels (zoom-independent)
+            outline_only: If True, draw only outline; if False, draw filled with outline
         """
         x, y = position
 
-        # Arrow tip is at the position
-        tip_x, tip_y = x, y
+        # Convert arrow center to screen coordinates
+        screen_center = transform.world_to_screen(x, y)
+        screen_x, screen_y = screen_center
 
-        # Isosceles triangle: narrower angle (pi/10 = 18 degrees instead of pi/6 = 30 degrees)
-        # This makes the arrow longer and more pointy
-        half_angle = math.pi / 10  # 18 degrees for a narrower, more obvious arrow
+        # Calculate arrow points in screen space (constant size regardless of zoom)
+        # Arrow tip is offset from center in the direction of the angle
+        tip_offset = arrow_size * 0.5
+        tip_x = screen_x + tip_offset * math.cos(angle)
+        tip_y = screen_y + tip_offset * math.sin(angle)
+
+        # Isosceles triangle: narrower angle (pi/10 = 18 degrees)
+        half_angle = math.pi / 10
         back_angle1 = angle + math.pi - half_angle
         back_angle2 = angle + math.pi + half_angle
 
@@ -570,27 +578,50 @@ class Edge(SpellGraphEntity):
         back_x2 = tip_x + arrow_size * math.cos(back_angle2)
         back_y2 = tip_y + arrow_size * math.sin(back_angle2)
 
-        # Convert to screen coordinates
-        screen_tip = transform.world_to_screen(tip_x, tip_y)
-        screen_back1 = transform.world_to_screen(back_x1, back_y1)
-        screen_back2 = transform.world_to_screen(back_x2, back_y2)
+        if outline_only:
+            # Draw only outline when selected
+            arcade.draw_triangle_outline(
+                tip_x, tip_y,
+                back_x1, back_y1,
+                back_x2, back_y2,
+                color,
+                2
+            )
+        else:
+            # Draw filled triangle with black outline
+            arcade.draw_triangle_filled(
+                tip_x, tip_y,
+                back_x1, back_y1,
+                back_x2, back_y2,
+                color
+            )
+            arcade.draw_triangle_outline(
+                tip_x, tip_y,
+                back_x1, back_y1,
+                back_x2, back_y2,
+                (0, 0, 0),  # Black outline
+                2
+            )
 
-        # Draw filled triangle
-        arcade.draw_triangle_filled(
-            screen_tip[0], screen_tip[1],
-            screen_back1[0], screen_back1[1],
-            screen_back2[0], screen_back2[1],
-            color
-        )
+    def _get_screen_length(self, transform: 'CoordinateTransform') -> float:
+        """
+        Calculate the total length of the edge in screen pixels.
 
-        # Draw outline for better visibility
-        arcade.draw_triangle_outline(
-            screen_tip[0], screen_tip[1],
-            screen_back1[0], screen_back1[1],
-            screen_back2[0], screen_back2[1],
-            (0, 0, 0),  # Black outline
-            2
-        )
+        Args:
+            transform: Coordinate transform for world-to-screen conversion
+
+        Returns:
+            Total path length in screen pixels
+        """
+        points = self.get_points()
+        total_length = 0.0
+        for i in range(len(points) - 1):
+            p1_screen = transform.world_to_screen(points[i][0], points[i][1])
+            p2_screen = transform.world_to_screen(points[i + 1][0], points[i + 1][1])
+            dx = p2_screen[0] - p1_screen[0]
+            dy = p2_screen[1] - p1_screen[1]
+            total_length += math.sqrt(dx * dx + dy * dy)
+        return total_length
 
     def draw(self, transform: 'CoordinateTransform'):
         """
@@ -631,7 +662,14 @@ class Edge(SpellGraphEntity):
             arcade.draw_line(p1_screen[0], p1_screen[1], p2_screen[0], p2_screen[1], color, line_width)
 
         # Draw directional arrow at path midpoint
-        if len(points) >= 2:
+        # Arrow size is constant in screen pixels (zoom-independent)
+        arrow_screen_size = 14  # pixels
+        screen_length = self._get_screen_length(transform)
+
+        # Only draw arrow if edge is large enough (at least 4x arrow size)
+        if len(points) >= 2 and screen_length >= arrow_screen_size * 4:
             arrow_pos, arrow_angle = self.get_arrow_position()
             arrow_color = (0, 200, 255) if self.is_selected else color
-            self._draw_arrow(arrow_pos, arrow_angle, arrow_color, transform, arrow_size=self._arrow_size)
+            # Draw outline only when selected, filled when not selected
+            self._draw_arrow(arrow_pos, arrow_angle, arrow_color, transform,
+                           arrow_size=arrow_screen_size, outline_only=self.is_selected)
