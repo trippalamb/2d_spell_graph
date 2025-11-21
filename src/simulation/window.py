@@ -278,6 +278,7 @@ class GraphSimulation(arcade.Window):
 
     def save_spell(self):
         """Save current spell configuration to a file."""
+        root = None
         try:
             # Use tkinter for file dialog
             import tkinter as tk
@@ -286,17 +287,24 @@ class GraphSimulation(arcade.Window):
             # Create a temporary root window (hidden)
             root = tk.Tk()
             root.withdraw()
+            root.update_idletasks()
             root.attributes('-topmost', True)
+            root.focus_force()
 
             # Show save dialog
             filename = filedialog.asksaveasfilename(
+                parent=root,
                 title="Save Spell",
                 defaultextension=".json",
                 filetypes=[("JSON files", "*.json"), ("All files", "*.*")],
                 initialdir="configs"
             )
 
+            # Proper cleanup of tkinter
+            root.update()
+            root.quit()
             root.destroy()
+            root = None
 
             if filename:
                 # Build configuration dictionary
@@ -342,9 +350,17 @@ class GraphSimulation(arcade.Window):
 
         except Exception as e:
             print(f"Error saving spell: {e}")
+            # Ensure cleanup even on error
+            if root is not None:
+                try:
+                    root.quit()
+                    root.destroy()
+                except:
+                    pass
 
     def load_spell(self):
         """Load a spell configuration from a file."""
+        root = None
         try:
             # Use tkinter for file dialog
             import tkinter as tk
@@ -353,16 +369,23 @@ class GraphSimulation(arcade.Window):
             # Create a temporary root window (hidden)
             root = tk.Tk()
             root.withdraw()
+            root.update_idletasks()
             root.attributes('-topmost', True)
+            root.focus_force()
 
             # Show open dialog
             filename = filedialog.askopenfilename(
+                parent=root,
                 title="Load Spell",
                 filetypes=[("JSON files", "*.json"), ("All files", "*.*")],
                 initialdir="configs"
             )
 
+            # Proper cleanup of tkinter
+            root.update()
+            root.quit()
             root.destroy()
+            root = None
 
             if filename:
                 # Load configuration
@@ -374,6 +397,13 @@ class GraphSimulation(arcade.Window):
 
         except Exception as e:
             print(f"Error loading spell: {e}")
+            # Ensure cleanup even on error
+            if root is not None:
+                try:
+                    root.quit()
+                    root.destroy()
+                except:
+                    pass
 
     def setup(self, config_path: str = "configs/default.json"):
         """
