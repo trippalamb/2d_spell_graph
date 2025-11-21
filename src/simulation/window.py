@@ -5,6 +5,7 @@ from typing import List, Optional, Tuple
 import json
 import os
 import re
+import time
 
 from src.core import Node, NodeType, Edge, EdgeDirection, SpellGraphEntity
 from src.physics import update_node_forces
@@ -100,6 +101,12 @@ class GraphSimulation(arcade.Window):
         self.dragged_node: Optional[Node] = None
         self.drag_offset_x = 0
         self.drag_offset_y = 0
+
+        # Edge selection and bezier handle dragging
+        self.selected_edge: Optional[Edge] = None
+        self.dragged_handle: Optional[int] = None  # 1 or 2 for handle number
+        self.last_click_time = 0.0
+        self.double_click_threshold = 0.3  # seconds
 
         # Info window for entity hover
         self.info_window = InfoWindow()
@@ -197,25 +204,16 @@ class GraphSimulation(arcade.Window):
 
     def repath_all_edges(self, num_segments: int = 10):
         """
-        Repath all edges with evenly-spaced intermediate segments.
+        Repath all edges by resetting bezier handles to straight lines.
 
         Args:
-            num_segments: Number of segments to create (default 10)
+            num_segments: Number of segments to render bezier curve (default 10)
         """
         for edge in self.edges:
-            # Calculate straight-line control points
-            start_x, start_y = edge.start_node.x, edge.start_node.y
-            end_x, end_y = edge.end_node.x, edge.end_node.y
-
-            # Create num_segments - 1 intermediate control points
-            control_points = []
-            for i in range(1, num_segments):
-                t = i / num_segments
-                x = start_x + t * (end_x - start_x)
-                y = start_y + t * (end_y - start_y)
-                control_points.append((x, y))
-
-            edge.control_points = control_points
+            # Reset bezier handles to straight-line positions
+            edge.reset_bezier_handles()
+            # Update segment count if needed
+            edge.num_segments = num_segments
 
     def save_spell(self):
         """Save current spell configuration to a file."""
@@ -448,6 +446,11 @@ class GraphSimulation(arcade.Window):
             self.dragged_node.x = world_x - self.drag_offset_x
             self.dragged_node.y = world_y - self.drag_offset_y
 
+        # Handle bezier handle dragging
+        if self.selected_edge is not None and self.dragged_handle is not None:
+            world_x, world_y = self.transform.screen_to_world(x, y)
+            self.selected_edge.set_handle_position(self.dragged_handle, world_x, world_y)
+
     def on_mouse_press(self, x: float, y: float, button: int, modifiers: int):
         """
         Handle mouse button press.
@@ -458,19 +461,46 @@ class GraphSimulation(arcade.Window):
             button: Mouse button that was pressed
             modifiers: Keyboard modifiers
         """
+        current_time = time.time()
+        world_x, world_y = self.transform.screen_to_world(x, y)
+
         # Start node dragging on left mouse button
         if button == arcade.MOUSE_BUTTON_LEFT:
-            # Convert screen position to world position
-            world_x, world_y = self.transform.screen_to_world(x, y)
+            # Priority 1: Check if clicking on a bezier handle (when edge is selected)
+            if self.selected_edge is not None:
+                handle_num = self.selected_edge.get_handle_at_point(world_x, world_y)
+                if handle_num is not None:
+                    # Check for double-click to reset handle
+                    if current_time - self.last_click_time < self.double_click_threshold:
+                        self.selected_edge.reset_handle(handle_num)
+                    else:
+                        # Start dragging the handle
+                        self.dragged_handle = handle_num
+                    self.last_click_time = current_time
+                    return
 
-            # Check if clicking on a node
+            # Priority 2: Check if clicking on a node
             for node in self.nodes:
                 if node.contains_point(world_x, world_y, self.transform):
                     self.dragged_node = node
                     # Store offset from node center to click position
                     self.drag_offset_x = world_x - node.x
                     self.drag_offset_y = world_y - node.y
-                    break
+                    # Deselect edge when dragging node
+                    self.selected_edge = None
+                    self.last_click_time = current_time
+                    return
+
+            # Priority 3: Check if clicking on an edge to select it
+            for edge in self.edges:
+                if edge.contains_point(world_x, world_y, self.transform):
+                    self.selected_edge = edge
+                    self.last_click_time = current_time
+                    return
+
+            # Clicked on empty space - deselect edge
+            self.selected_edge = None
+            self.last_click_time = current_time
 
         # Start panning on right mouse button
         elif button == arcade.MOUSE_BUTTON_RIGHT:
@@ -493,6 +523,7 @@ class GraphSimulation(arcade.Window):
         # Stop node dragging on left mouse button release
         if button == arcade.MOUSE_BUTTON_LEFT:
             self.dragged_node = None
+            self.dragged_handle = None
 
         # Stop panning on right mouse button release
         elif button == arcade.MOUSE_BUTTON_RIGHT:
@@ -569,6 +600,10 @@ class GraphSimulation(arcade.Window):
         # Draw edges first (so they appear behind nodes)
         for edge in self.edges:
             edge.draw(self.transform)
+
+        # Draw bezier handles for selected edge
+        if self.selected_edge is not None:
+            self.selected_edge.draw_handles(self.transform)
 
         # Draw nodes
         for node in self.nodes:

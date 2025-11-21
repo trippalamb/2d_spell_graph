@@ -22,14 +22,15 @@ class Edge(SpellGraphEntity):
     """
     Represents an edge in the spatial physics graph.
 
-    Edges dynamically connect two nodes and can have intermediate control points.
-    The edge path is recalculated whenever nodes move.
+    Edges dynamically connect two nodes using cubic bezier curves.
+    The edge path is recalculated whenever nodes or bezier handles move.
 
     Attributes:
         start_node: The source node
         end_node: The target node
-        control_points: List of intermediate waypoints (in world coordinates)
-        tension_values: List of tension values at each bend point
+        bezier_handle1: First bezier control handle (near start)
+        bezier_handle2: Second bezier control handle (near end)
+        num_segments: Number of segments to render the bezier curve
     """
 
     def __init__(self, start_node: 'Node', end_node: 'Node',
@@ -41,7 +42,7 @@ class Edge(SpellGraphEntity):
         Args:
             start_node: Source node
             end_node: Target node
-            control_points: Optional list of intermediate waypoints
+            control_points: Optional list of intermediate waypoints (legacy, converted to bezier)
             entity_id: Unique identifier (auto-generated if None)
         """
         if entity_id is None:
@@ -50,19 +51,146 @@ class Edge(SpellGraphEntity):
 
         self.start_node = start_node
         self.end_node = end_node
-        self.control_points = control_points if control_points is not None else []
+        self.num_segments = 10  # Number of segments to render bezier curve
+
+        # Initialize bezier handles at 1/3 and 2/3 positions (straight line)
+        self.bezier_handle1: Optional[Tuple[float, float]] = None
+        self.bezier_handle2: Optional[Tuple[float, float]] = None
+        self.reset_bezier_handles()
+
+        # Legacy control_points support (ignored, using bezier instead)
+        self.control_points = []
+
+    def reset_bezier_handles(self):
+        """Reset bezier handles to straight-line positions (1/3 and 2/3 along edge)."""
+        start_x, start_y = self.start_node.x, self.start_node.y
+        end_x, end_y = self.end_node.x, self.end_node.y
+
+        # Handle 1 at 1/3 position
+        self.bezier_handle1 = (
+            start_x + (end_x - start_x) / 3,
+            start_y + (end_y - start_y) / 3
+        )
+        # Handle 2 at 2/3 position
+        self.bezier_handle2 = (
+            start_x + 2 * (end_x - start_x) / 3,
+            start_y + 2 * (end_y - start_y) / 3
+        )
 
     def get_points(self) -> List[Tuple[float, float]]:
         """
-        Get the current path points dynamically from node positions.
+        Get the current path points by calculating cubic bezier curve.
 
         Returns:
-            List of (x, y) tuples representing the path
+            List of (x, y) tuples representing the bezier curve
         """
-        points = [(self.start_node.x, self.start_node.y)]
-        points.extend(self.control_points)
-        points.append((self.end_node.x, self.end_node.y))
+        p0 = (self.start_node.x, self.start_node.y)
+        p1 = self.bezier_handle1
+        p2 = self.bezier_handle2
+        p3 = (self.end_node.x, self.end_node.y)
+
+        points = []
+        for i in range(self.num_segments + 1):
+            t = i / self.num_segments
+            # Cubic bezier formula: B(t) = (1-t)³P0 + 3(1-t)²tP1 + 3(1-t)t²P2 + t³P3
+            x = (1-t)**3 * p0[0] + 3*(1-t)**2*t * p1[0] + 3*(1-t)*t**2 * p2[0] + t**3 * p3[0]
+            y = (1-t)**3 * p0[1] + 3*(1-t)**2*t * p1[1] + 3*(1-t)*t**2 * p2[1] + t**3 * p3[1]
+            points.append((x, y))
+
         return points
+
+    def get_handle_at_point(self, x: float, y: float, threshold: float = 15) -> Optional[int]:
+        """
+        Check if a point is near a bezier handle.
+
+        Args:
+            x: X coordinate in world space
+            y: Y coordinate in world space
+            threshold: Distance threshold for hit detection
+
+        Returns:
+            1 for handle1, 2 for handle2, None if not near any handle
+        """
+        # Check handle 1
+        dx1 = x - self.bezier_handle1[0]
+        dy1 = y - self.bezier_handle1[1]
+        if math.sqrt(dx1*dx1 + dy1*dy1) <= threshold:
+            return 1
+
+        # Check handle 2
+        dx2 = x - self.bezier_handle2[0]
+        dy2 = y - self.bezier_handle2[1]
+        if math.sqrt(dx2*dx2 + dy2*dy2) <= threshold:
+            return 2
+
+        return None
+
+    def set_handle_position(self, handle_num: int, x: float, y: float):
+        """
+        Set the position of a bezier handle.
+
+        Args:
+            handle_num: 1 or 2
+            x: New X coordinate
+            y: New Y coordinate
+        """
+        if handle_num == 1:
+            self.bezier_handle1 = (x, y)
+        elif handle_num == 2:
+            self.bezier_handle2 = (x, y)
+
+    def reset_handle(self, handle_num: int):
+        """
+        Reset a single bezier handle to its straight-line position.
+
+        Args:
+            handle_num: 1 or 2
+        """
+        start_x, start_y = self.start_node.x, self.start_node.y
+        end_x, end_y = self.end_node.x, self.end_node.y
+
+        if handle_num == 1:
+            self.bezier_handle1 = (
+                start_x + (end_x - start_x) / 3,
+                start_y + (end_y - start_y) / 3
+            )
+        elif handle_num == 2:
+            self.bezier_handle2 = (
+                start_x + 2 * (end_x - start_x) / 3,
+                start_y + 2 * (end_y - start_y) / 3
+            )
+
+    def draw_handles(self, transform: 'CoordinateTransform'):
+        """
+        Draw bezier control handles (when edge is selected).
+
+        Args:
+            transform: Coordinate transform for world-to-screen conversion
+        """
+        # Get screen positions
+        start_screen = transform.world_to_screen(self.start_node.x, self.start_node.y)
+        end_screen = transform.world_to_screen(self.end_node.x, self.end_node.y)
+        handle1_screen = transform.world_to_screen(self.bezier_handle1[0], self.bezier_handle1[1])
+        handle2_screen = transform.world_to_screen(self.bezier_handle2[0], self.bezier_handle2[1])
+
+        # Draw lines from nodes to handles
+        arcade.draw_line(start_screen[0], start_screen[1],
+                        handle1_screen[0], handle1_screen[1],
+                        (100, 100, 100), 1)
+        arcade.draw_line(end_screen[0], end_screen[1],
+                        handle2_screen[0], handle2_screen[1],
+                        (100, 100, 100), 1)
+
+        # Draw handle circles
+        handle_radius = 8
+        arcade.draw_circle_filled(handle1_screen[0], handle1_screen[1],
+                                  handle_radius, (255, 100, 100))
+        arcade.draw_circle_outline(handle1_screen[0], handle1_screen[1],
+                                   handle_radius, (200, 0, 0), 2)
+        arcade.draw_circle_filled(handle2_screen[0], handle2_screen[1],
+                                  handle_radius, (100, 100, 255))
+        arcade.draw_circle_outline(handle2_screen[0], handle2_screen[1],
+                                   handle_radius, (0, 0, 200), 2)
 
     def _calculate_tensions(self) -> List[float]:
         """
