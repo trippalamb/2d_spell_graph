@@ -276,47 +276,77 @@ class GraphSimulation(arcade.Window):
             # Update segment count if needed
             edge.num_segments = num_segments
 
-    def save_spell(self):
-        """Save current spell configuration to a file."""
-        root = None
-        filename = None
+    def _get_save_filename(self) -> Optional[str]:
+        """Get a filename for saving using a subprocess to avoid tkinter/arcade conflicts."""
+        import subprocess
+        import sys
+
+        script = '''
+import tkinter as tk
+from tkinter import filedialog
+root = tk.Tk()
+root.withdraw()
+root.attributes('-topmost', True)
+filename = filedialog.asksaveasfilename(
+    title="Save Spell",
+    defaultextension=".json",
+    filetypes=[("JSON files", "*.json"), ("All files", "*.*")],
+    initialdir="configs"
+)
+print(filename if filename else "")
+root.quit()
+root.destroy()
+'''
         try:
-            # Use tkinter for file dialog
-            import tkinter as tk
-            from tkinter import filedialog
-
-            # Create a temporary root window (hidden)
-            root = tk.Tk()
-            root.withdraw()
-            root.update_idletasks()
-            root.attributes('-topmost', True)
-            root.focus_force()
-
-            # Show save dialog
-            filename = filedialog.asksaveasfilename(
-                parent=root,
-                title="Save Spell",
-                defaultextension=".json",
-                filetypes=[("JSON files", "*.json"), ("All files", "*.*")],
-                initialdir="configs"
+            result = subprocess.run(
+                [sys.executable, '-c', script],
+                capture_output=True,
+                text=True,
+                timeout=60
             )
-
+            filename = result.stdout.strip()
+            return filename if filename else None
         except Exception as e:
             print(f"Error with file dialog: {e}")
-        finally:
-            # Ensure tkinter cleanup happens no matter what
-            if root is not None:
-                try:
-                    root.update()
-                    root.quit()
-                    root.destroy()
-                except:
-                    pass
-                # Force garbage collection to help clean up tkinter
-                import gc
-                gc.collect()
+            return None
 
-        # Now do the actual saving AFTER tkinter is fully destroyed
+    def _get_load_filename(self) -> Optional[str]:
+        """Get a filename for loading using a subprocess to avoid tkinter/arcade conflicts."""
+        import subprocess
+        import sys
+
+        script = '''
+import tkinter as tk
+from tkinter import filedialog
+root = tk.Tk()
+root.withdraw()
+root.attributes('-topmost', True)
+filename = filedialog.askopenfilename(
+    title="Load Spell",
+    filetypes=[("JSON files", "*.json"), ("All files", "*.*")],
+    initialdir="configs"
+)
+print(filename if filename else "")
+root.quit()
+root.destroy()
+'''
+        try:
+            result = subprocess.run(
+                [sys.executable, '-c', script],
+                capture_output=True,
+                text=True,
+                timeout=60
+            )
+            filename = result.stdout.strip()
+            return filename if filename else None
+        except Exception as e:
+            print(f"Error with file dialog: {e}")
+            return None
+
+    def save_spell(self):
+        """Save current spell configuration to a file."""
+        filename = self._get_save_filename()
+
         if filename:
             try:
                 # Build configuration dictionary
@@ -365,44 +395,8 @@ class GraphSimulation(arcade.Window):
 
     def load_spell(self):
         """Load a spell configuration from a file."""
-        root = None
-        filename = None
-        try:
-            # Use tkinter for file dialog
-            import tkinter as tk
-            from tkinter import filedialog
+        filename = self._get_load_filename()
 
-            # Create a temporary root window (hidden)
-            root = tk.Tk()
-            root.withdraw()
-            root.update_idletasks()
-            root.attributes('-topmost', True)
-            root.focus_force()
-
-            # Show open dialog
-            filename = filedialog.askopenfilename(
-                parent=root,
-                title="Load Spell",
-                filetypes=[("JSON files", "*.json"), ("All files", "*.*")],
-                initialdir="configs"
-            )
-
-        except Exception as e:
-            print(f"Error with file dialog: {e}")
-        finally:
-            # Ensure tkinter cleanup happens no matter what
-            if root is not None:
-                try:
-                    root.update()
-                    root.quit()
-                    root.destroy()
-                except:
-                    pass
-                # Force garbage collection to help clean up tkinter
-                import gc
-                gc.collect()
-
-        # Now do the actual loading AFTER tkinter is fully destroyed
         if filename:
             try:
                 self.load_config(filename)
