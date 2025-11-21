@@ -224,20 +224,31 @@ class CursorManager:
         if not self.is_playing:
             return
 
-        cursors_to_remove = []
+        # Limit max cursors to prevent infinite growth with cyclical graphs
+        MAX_CURSORS = 100
 
-        for cursor in self.cursors:
+        cursors_to_remove = []
+        nodes_to_spawn_from = []
+
+        # Iterate over a COPY of the list to avoid issues with modification during iteration
+        for cursor in self.cursors[:]:
             # Update cursor and check if it reached destination
             reached_destination = cursor.update(dt, edges)
 
             if reached_destination:
                 cursors_to_remove.append(cursor)
-                # Spawn new cursors from the destination node
-                self.spawn_cursors_at_node(cursor.target_node_index)
+                # Queue node for spawning (don't spawn during iteration)
+                nodes_to_spawn_from.append(cursor.target_node_index)
 
         # Remove dead cursors
         for cursor in cursors_to_remove:
-            self.cursors.remove(cursor)
+            if cursor in self.cursors:
+                self.cursors.remove(cursor)
+
+        # Spawn new cursors from destination nodes (after iteration is complete)
+        for node_index in nodes_to_spawn_from:
+            if len(self.cursors) < MAX_CURSORS:
+                self.spawn_cursors_at_node(node_index)
 
     def draw(self, transform: 'CoordinateTransform'):
         """
